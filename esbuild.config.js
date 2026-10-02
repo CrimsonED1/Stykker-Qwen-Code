@@ -24,6 +24,18 @@ const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
 const pkg = require(path.resolve(__dirname, 'package.json'));
 
+// Custom builds can stamp themselves, e.g. `0.24.7+fork.abc1234`. Semver
+// build metadata (`+…`) is ignored by update checks, so a stamped build is
+// not reported as outdated against the same release.
+const buildVersion = process.env.QWEN_CODE_BUILD_VERSION?.trim() || pkg.version;
+if (
+  !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(buildVersion)
+) {
+  throw new Error(
+    `QWEN_CODE_BUILD_VERSION must be a semver version, got: ${buildVersion}`,
+  );
+}
+
 // Clean dist directory (cross-platform)
 rmSync(path.resolve(__dirname, 'dist'), { recursive: true, force: true });
 
@@ -210,7 +222,7 @@ const mainBuild = esbuild.build({
     punycode: require.resolve('punycode/'),
   },
   define: {
-    'process.env.CLI_VERSION': JSON.stringify(pkg.version),
+    'process.env.CLI_VERSION': JSON.stringify(buildVersion),
     // react-reconciler ≥0.33 (ink 7) gates its dev build behind NODE_ENV
     // and calls performance.measure() on every render, leaking
     // PerformanceMeasure objects into the global measureEntryBuffer.
