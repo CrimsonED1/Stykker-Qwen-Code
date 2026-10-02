@@ -592,6 +592,8 @@ export interface ServeAuthProviderDescriptor {
   envKey?: string;
   models?: ServeAuthProviderModel[];
   modelsEditable?: boolean;
+  /** `POST /workspace/auth/provider/models` can list this provider's models. */
+  supportsModelDiscovery?: boolean;
   apiKeyPlaceholder?: string;
   documentationUrl?: string;
   showAdvancedConfig?: boolean;
@@ -614,6 +616,19 @@ export interface ServeAuthProviderCatalog {
     description: string;
     providerIds: string[];
   }>;
+}
+
+export interface ServeAuthProviderModelsRequest {
+  providerId: string;
+  /** One of the provider's preset base URLs; defaults to its only one. */
+  baseUrl?: string;
+  apiKey: string;
+}
+
+export interface ServeAuthProviderModelsResult {
+  v: 1;
+  /** Models the key can use, or `null` when the provider listing failed. */
+  models: ServeAuthProviderModel[] | null;
 }
 
 export interface ServeAuthProviderInstallRequest {

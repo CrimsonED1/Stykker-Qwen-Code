@@ -234,6 +234,35 @@ describe('discoverProviderModels', () => {
     expect(fetchWithPolicyMock).not.toHaveBeenCalled();
   });
 
+  it('requests the provider catalog path when one is configured', async () => {
+    fetchWithPolicyMock.mockResolvedValue(response({ data: [{ id: 'new' }] }));
+
+    await discoverProviderModels({ ...options, modelListPath: '/models/user' });
+
+    expect(fetchWithPolicyMock).toHaveBeenCalledWith(
+      'https://example.com/v1/models/user',
+      expect.any(Object),
+    );
+  });
+
+  it('uses a served context length only for models without a static spec', async () => {
+    await expect(
+      discoverFrom([
+        { id: 'sized-model', context_length: 262144 },
+        { id: 'known-a', context_length: 8 },
+        { id: 'fractional-model', context_length: 1.5 },
+        { id: 'string-sized', context_length: '4096' },
+        { id: 'zero-sized', context_length: 0 },
+      ]),
+    ).resolves.toEqual([
+      { id: 'sized-model', contextWindowSize: 262144 },
+      { id: 'known-a', contextWindowSize: 1000 },
+      { id: 'fractional-model' },
+      { id: 'string-sized' },
+      { id: 'zero-sized' },
+    ]);
+  });
+
   it('passes caller cancellation to the bounded request', async () => {
     fetchWithPolicyMock.mockResolvedValue(response({ data: [{ id: 'new' }] }));
     const controller = new AbortController();

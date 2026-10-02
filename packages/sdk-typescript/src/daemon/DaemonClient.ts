@@ -32,6 +32,8 @@ import type {
   DaemonAuthProviderCatalog,
   DaemonAuthProviderInstallRequest,
   DaemonAuthProviderInstallResult,
+  DaemonAuthProviderModelsRequest,
+  DaemonAuthProviderModelsResult,
   DaemonAuthStatusSnapshot,
   DaemonBrand,
   DaemonCapabilities,
@@ -6742,6 +6744,29 @@ export class DaemonClient {
           throw await this.failOnError(res, 'GET /workspace/auth/providers');
         }
         return (await res.json()) as DaemonAuthProviderCatalog;
+      },
+    );
+  }
+
+  /** Lists the models an API key may use on a provider's preset endpoint. */
+  async listAuthProviderModels(
+    req: DaemonAuthProviderModelsRequest,
+  ): Promise<DaemonAuthProviderModelsResult> {
+    return await this.fetchWithTimeout(
+      `${this.baseUrl}/workspace/auth/provider/models`,
+      {
+        method: 'POST',
+        headers: this.headers({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(req),
+      },
+      async (res) => {
+        if (!res.ok) {
+          throw await this.failOnError(
+            res,
+            'POST /workspace/auth/provider/models',
+          );
+        }
+        return (await res.json()) as DaemonAuthProviderModelsResult;
       },
     );
   }

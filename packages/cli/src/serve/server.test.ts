@@ -301,11 +301,13 @@ vi.mock('node:fs', async (importOriginal) => {
     realpathSync: wrapped,
   };
 });
+const mockDiscoverProviderModels = vi.hoisted(() => vi.fn());
 vi.mock('@qwen-code/qwen-code-core', async (importOriginal) => {
   const original =
     await importOriginal<typeof import('@qwen-code/qwen-code-core')>();
   return {
     ...original,
+    discoverProviderModels: mockDiscoverProviderModels,
     createWorktreeSessionMarkerExclusive: (...args: unknown[]) =>
       mockWt.createMarker ? mockWt.createMarker(...args) : Promise.resolve(),
     readWorktreeSessionMarkerStrict: (...args: unknown[]) =>
@@ -41646,6 +41648,91 @@ describe('auth device-flow routes', () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('unsupported_protocol');
     expect(installAuthProvider).not.toHaveBeenCalled();
+  });
+
+  it('GET /workspace/auth/providers flags providers with model discovery', async () => {
+    const { app } = buildApp({ token: 'tkn' });
+    const res = await request(app)
+      .get('/workspace/auth/providers')
+      .set('Authorization', 'Bearer tkn')
+      .set('Host', `127.0.0.1:${baseOpts.port}`);
+    expect(res.status).toBe(200);
+    const byId = new Map(
+      (res.body.providers as Array<{ id: string }>).map((p) => [p.id, p]),
+    );
+    expect(byId.get('openrouter')).toMatchObject({
+      supportsModelDiscovery: true,
+    });
+    expect(byId.get('custom-openai-compatible')).not.toHaveProperty(
+      'supportsModelDiscovery',
+    );
+  });
+
+  it('POST /workspace/auth/provider/models lists models from the preset endpoint', async () => {
+    mockDiscoverProviderModels.mockReset();
+    mockDiscoverProviderModels.mockResolvedValue([
+      { id: 'served-model', contextWindowSize: 262144 },
+    ]);
+    const { app } = buildApp({ token: 'tkn' });
+    const res = await request(app)
+      .post('/workspace/auth/provider/models')
+      .set('Authorization', 'Bearer tkn')
+      .set('Host', `127.0.0.1:${baseOpts.port}`)
+      .send({ providerId: 'openrouter', apiKey: 'sk-or-secret' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      v: 1,
+      models: [{ id: 'served-model', contextWindowSize: 262144 }],
+    });
+    expect(JSON.stringify(res.body)).not.toContain('sk-or-secret');
+    expect(mockDiscoverProviderModels).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: 'sk-or-secret',
+        modelListPath: '/models/user',
+      }),
+    );
+  });
+
+  it('POST /workspace/auth/provider/models reports a failed listing as null', async () => {
+    mockDiscoverProviderModels.mockReset();
+    mockDiscoverProviderModels.mockResolvedValue(null);
+    const { app } = buildApp({ token: 'tkn' });
+    const res = await request(app)
+      .post('/workspace/auth/provider/models')
+      .set('Authorization', 'Bearer tkn')
+      .set('Host', `127.0.0.1:${baseOpts.port}`)
+      .send({ providerId: 'openrouter', apiKey: 'sk-or-secret' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ v: 1, models: null });
+  });
+
+  it.each([
+    [{ apiKey: 'sk-test' }, 'invalid_request'],
+    [{ providerId: 'openrouter' }, 'invalid_request'],
+    [
+      { providerId: 'custom-openai-compatible', apiKey: 'sk-test' },
+      'unsupported_provider',
+    ],
+    [
+      {
+        providerId: 'openrouter',
+        apiKey: 'sk-test',
+        baseUrl: 'https://attacker.example/v1',
+      },
+      'invalid_base_url',
+    ],
+  ])('POST /workspace/auth/provider/models rejects %j', async (body, code) => {
+    mockDiscoverProviderModels.mockReset();
+    const { app } = buildApp({ token: 'tkn' });
+    const res = await request(app)
+      .post('/workspace/auth/provider/models')
+      .set('Authorization', 'Bearer tkn')
+      .set('Host', `127.0.0.1:${baseOpts.port}`)
+      .send(body);
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe(code);
+    expect(mockDiscoverProviderModels).not.toHaveBeenCalled();
   });
 
   it('POST /workspace/auth/provider rejects private baseUrl values', async () => {

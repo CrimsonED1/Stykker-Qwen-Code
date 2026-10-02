@@ -11,6 +11,7 @@ const { actions, ownerGuard, ownerState } = vi.hoisted(() => {
     actions: {
       getAuthProviders: vi.fn(),
       installAuthProvider: vi.fn(),
+      listAuthProviderModels: vi.fn(),
     },
     ownerGuard: {
       capture: vi.fn(() => {
@@ -572,5 +573,116 @@ describe('host model management', () => {
       );
     });
     expect(actions.installAuthProvider).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthMessage provider model discovery', () => {
+  const modelsInput = () =>
+    container!.querySelector<HTMLInputElement>('input[aria-label="Model IDs"]');
+  const modelLabels = () =>
+    Array.from(container!.querySelectorAll('label')).map(
+      (label) => label.textContent ?? '',
+    );
+  const toggle = async (modelId: string) => {
+    const label = Array.from(container!.querySelectorAll('label')).find(
+      (item) => item.textContent?.startsWith(modelId),
+    );
+    const checkbox = label && document.getElementById(label.htmlFor);
+    if (!checkbox) throw new Error(`Missing checkbox: ${modelId}`);
+    await act(async () => {
+      checkbox.click();
+      await Promise.resolve();
+    });
+  };
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+  beforeEach(() => {
+    actions.getAuthProviders.mockResolvedValue({
+      v: 1,
+      workspaceCwd: '/workspace',
+      providers: [
+        {
+          id: 'router',
+          label: 'Router',
+          description: '',
+          protocol: 'openai',
+          baseUrl: 'https://router.example/v1',
+          steps: ['apiKey', 'models'],
+          showAdvancedConfig: true,
+          supportsModelDiscovery: true,
+          models: [{ id: 'retired-preset' }, { id: 'live-preset' }],
+        },
+      ],
+      groups: [
+        {
+          id: 'custom',
+          label: 'Custom',
+          description: '',
+          providerIds: ['router'],
+        },
+      ],
+    });
+    actions.installAuthProvider.mockResolvedValue({ message: 'Saved' });
+  });
+
+  it('lists the models the key may use and saves the chosen ones', async () => {
+    actions.listAuthProviderModels.mockResolvedValue({
+      v: 1,
+      models: [
+        { id: 'live-preset', contextWindowSize: 262144 },
+        { id: 'served-new' },
+        { id: 'served-other' },
+      ],
+    });
+    await openAndSave(async (click) => {
+      fillInput('API Key', 'sk-test');
+      await click('next');
+      await settle();
+
+      expect(actions.listAuthProviderModels).toHaveBeenCalledWith({
+        providerId: 'router',
+        baseUrl: 'https://router.example/v1',
+        apiKey: 'sk-test',
+      });
+      // The untouched preset list keeps only the served id.
+      expect(modelsInput()?.value).toBe('live-preset');
+      expect(modelLabels()).toContain('live-preset 262k');
+
+      fillInput('Search models', 'new');
+      expect(modelLabels()).toEqual(['served-new']);
+      await toggle('served-new');
+      expect(modelsInput()?.value).toBe('live-preset, served-new');
+
+      await click('next');
+    });
+    expect(actions.installAuthProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'router',
+        modelIds: ['live-preset', 'served-new'],
+      }),
+    );
+  });
+
+  it('falls back to manual entry when the listing fails', async () => {
+    actions.listAuthProviderModels.mockRejectedValue(new Error('offline'));
+    await openAndSave(async (click) => {
+      fillInput('API Key', 'sk-test');
+      await click('next');
+      await settle();
+
+      expect(container?.textContent).toContain(
+        'Could not load models from the provider.',
+      );
+      expect(modelsInput()?.value).toBe('retired-preset, live-preset');
+      await click('next');
+    });
+    expect(actions.installAuthProvider).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modelIds: ['retired-preset', 'live-preset'],
+      }),
+    );
   });
 });

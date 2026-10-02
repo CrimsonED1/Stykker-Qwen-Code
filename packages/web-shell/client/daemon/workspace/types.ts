@@ -11,6 +11,8 @@ import type {
   DaemonAuthProviderCatalog,
   DaemonAuthProviderInstallRequest,
   DaemonAuthProviderInstallResult,
+  DaemonAuthProviderModelsRequest,
+  DaemonAuthProviderModelsResult,
   DaemonAuthStatusSnapshot,
   DaemonCapabilities,
   DaemonChannelMutationResult,
@@ -707,6 +709,9 @@ export interface DaemonWorkspaceActions {
   cancelDeviceFlow(deviceFlowId: string): Promise<void>;
   getAuthStatus(): Promise<DaemonAuthStatusSnapshot>;
   getAuthProviders(): Promise<DaemonAuthProviderCatalog>;
+  listAuthProviderModels(
+    req: DaemonAuthProviderModelsRequest,
+  ): Promise<DaemonAuthProviderModelsResult>;
   installAuthProvider(
     req: DaemonAuthProviderInstallRequest,
   ): Promise<DaemonAuthProviderInstallResult>;

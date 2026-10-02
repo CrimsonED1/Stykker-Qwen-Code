@@ -1122,6 +1122,14 @@ export function createDaemonWorkspaceActions({
       );
     },
 
+    async listAuthProviderModels(req) {
+      const client = requireClient(getClient, 'List provider models failed');
+      return withActionTimeout(
+        client.listAuthProviderModels(req),
+        'List provider models timed out',
+      );
+    },
+
     async installAuthProvider(req) {
       const client = requireClient(getClient, 'Install auth provider failed');
       return client.installAuthProvider(req);

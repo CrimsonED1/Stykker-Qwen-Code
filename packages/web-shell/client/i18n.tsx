@@ -2388,6 +2388,13 @@ const EN: Messages = {
   'auth.continue': 'Continue',
   'auth.modelsPrompt': (v) =>
     `Enter model IDs separated by commas. Examples: ${v?.modelIds ?? ''}`,
+  'auth.models.loading': 'Loading models from provider…',
+  'auth.models.searchPlaceholder': 'Search models',
+  'auth.models.available': (v) =>
+    `Models available to this key: ${v?.count ?? 0}`,
+  'auth.models.noMatch': 'No models match the search.',
+  'auth.models.unavailable':
+    'Could not load models from the provider. Enter model IDs manually.',
   'auth.advanced.prompt': 'Optional: configure advanced generation settings.',
   'auth.advanced.thinking': 'Enable thinking',
   'auth.advanced.thinkingDesc':
@@ -6518,6 +6525,11 @@ const ZH: Messages = {
   'auth.continue': '继续',
   'auth.modelsPrompt': (v) =>
     `输入以逗号分隔的模型 ID。例如：${v?.modelIds ?? ''}`,
+  'auth.models.loading': '正在从服务商加载模型…',
+  'auth.models.searchPlaceholder': '搜索模型',
+  'auth.models.available': (v) => `此密钥可用的模型：${v?.count ?? 0}`,
+  'auth.models.noMatch': '没有匹配搜索的模型。',
+  'auth.models.unavailable': '无法从服务商加载模型，请手动输入模型 ID。',
   'auth.advanced.prompt': '可选：配置高级生成设置。',
   'auth.advanced.thinking': '启用 thinking',
   'auth.advanced.thinkingDesc': '启用扩展推理；不勾选时保留模型默认行为。',

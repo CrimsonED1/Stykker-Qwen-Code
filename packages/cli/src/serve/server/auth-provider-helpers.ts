@@ -7,11 +7,18 @@
 import { resolveVoiceTransport } from '../../services/voice-model.js';
 
 import * as net from 'node:net';
-import { ALL_PROVIDERS, shouldShowStep } from '@qwen-code/qwen-code-core';
+import {
+  ALL_PROVIDERS,
+  shouldShowStep,
+  type ModelSpec,
+  type ProviderConfig,
+} from '@qwen-code/qwen-code-core';
 import type {
   ServeAuthProviderCatalog,
   ServeAuthProviderDescriptor,
   ServeAuthProviderInstallRequest,
+  ServeAuthProviderModel,
+  ServeAuthProviderModelsRequest,
 } from '../types.js';
 
 const AUTH_PROVIDER_STEPS: ServeAuthProviderDescriptor['steps'] = [
@@ -22,6 +29,20 @@ const AUTH_PROVIDER_STEPS: ServeAuthProviderDescriptor['steps'] = [
   'models',
   'advancedConfig',
 ];
+
+export function toAuthProviderModel(model: ModelSpec): ServeAuthProviderModel {
+  return {
+    id: model.id,
+    ...(model.contextWindowSize !== undefined
+      ? { contextWindowSize: model.contextWindowSize }
+      : {}),
+    ...(model.enableThinking !== undefined
+      ? { enableThinking: model.enableThinking }
+      : {}),
+    ...(model.modalities ? { modalities: model.modalities } : {}),
+    ...(model.description ? { description: model.description } : {}),
+  };
+}
 
 function buildAuthProviderDescriptor(
   provider: (typeof ALL_PROVIDERS)[number],
@@ -41,22 +62,13 @@ function buildAuthProviderDescriptor(
     ...(provider.baseUrl !== undefined ? { baseUrl: provider.baseUrl } : {}),
     ...(typeof provider.envKey === 'string' ? { envKey: provider.envKey } : {}),
     ...(provider.models
-      ? {
-          models: provider.models.map((model) => ({
-            id: model.id,
-            ...(model.contextWindowSize !== undefined
-              ? { contextWindowSize: model.contextWindowSize }
-              : {}),
-            ...(model.enableThinking !== undefined
-              ? { enableThinking: model.enableThinking }
-              : {}),
-            ...(model.modalities ? { modalities: model.modalities } : {}),
-            ...(model.description ? { description: model.description } : {}),
-          })),
-        }
+      ? { models: provider.models.map(toAuthProviderModel) }
       : {}),
     ...(provider.modelsEditable !== undefined
       ? { modelsEditable: provider.modelsEditable }
+      : {}),
+    ...(provider.supportsModelDiscovery
+      ? { supportsModelDiscovery: true }
       : {}),
     ...(provider.apiKeyPlaceholder
       ? { apiKeyPlaceholder: provider.apiKeyPlaceholder }
@@ -431,4 +443,73 @@ export function parseAuthProviderInstallRequest(
       ...(advancedConfig ? { advancedConfig } : {}),
     },
   };
+}
+
+function presetBaseUrls(provider: ProviderConfig): string[] {
+  if (typeof provider.baseUrl === 'string') return [provider.baseUrl];
+  return (provider.baseUrl ?? []).map((option) => option.url);
+}
+
+type AuthProviderModelsParseResult =
+  | {
+      ok: true;
+      value: { provider: ProviderConfig; baseUrl: string; apiKey: string };
+    }
+  | { ok: false; code: string; error: string };
+
+/**
+ * Validates a model-listing request. The base URL must be one of the
+ * provider's preset endpoints, so the route never forwards the key to a
+ * caller-chosen host.
+ */
+export function parseAuthProviderModelsRequest(
+  body: Record<string, unknown>,
+): AuthProviderModelsParseResult {
+  const request = body as Partial<
+    Record<keyof ServeAuthProviderModelsRequest, unknown>
+  >;
+  const { providerId, apiKey } = request;
+  if (
+    typeof providerId !== 'string' ||
+    providerId.trim().length === 0 ||
+    typeof apiKey !== 'string' ||
+    apiKey.trim().length === 0
+  ) {
+    return {
+      ok: false,
+      code: 'invalid_request',
+      error: '`providerId` and `apiKey` are required',
+    };
+  }
+  const provider = ALL_PROVIDERS.find((item) => item.id === providerId.trim());
+  if (!provider?.supportsModelDiscovery) {
+    return {
+      ok: false,
+      code: 'unsupported_provider',
+      error: `Model discovery is not supported for provider: ${providerId}`,
+    };
+  }
+  const allowed = presetBaseUrls(provider);
+  const requested = request.baseUrl;
+  if (requested !== undefined && typeof requested !== 'string') {
+    return {
+      ok: false,
+      code: 'invalid_base_url',
+      error: '`baseUrl` must be a string',
+    };
+  }
+  const normalized = requested?.trim().replace(/\/+$/, '');
+  const baseUrl = normalized
+    ? allowed.find((url) => url.replace(/\/+$/, '') === normalized)
+    : allowed.length === 1
+      ? allowed[0]
+      : undefined;
+  if (!baseUrl) {
+    return {
+      ok: false,
+      code: 'invalid_base_url',
+      error: `\`baseUrl\` must be one of: ${allowed.join(', ')}`,
+    };
+  }
+  return { ok: true, value: { provider, baseUrl, apiKey } };
 }

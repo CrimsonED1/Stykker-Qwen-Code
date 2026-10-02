@@ -19,12 +19,15 @@ interface DiscoverProviderModelsOptions {
   baseUrl: string;
   apiKey: string;
   staticModels: readonly ModelSpec[];
+  /** Catalog path below the base URL; defaults to `/models`. */
+  modelListPath?: string;
   signal?: AbortSignal;
 }
 
 interface DiscoveredModel {
   id: string;
   created?: number;
+  contextLength?: number;
 }
 
 function readModels(value: unknown): DiscoveredModel[] | null {
@@ -59,9 +62,17 @@ function readModels(value: unknown): DiscoveredModel[] | null {
         typeof created === 'number' && Number.isFinite(created) && created >= 0
           ? created
           : undefined;
+      // OpenRouter-style catalogs report the window as `context_length`.
+      const contextLength = (item as { context_length?: unknown })
+        .context_length;
       models.push({
         id: trimmedId,
         ...(creationTime === undefined ? {} : { created: creationTime }),
+        ...(typeof contextLength === 'number' &&
+        Number.isSafeInteger(contextLength) &&
+        contextLength > 0
+          ? { contextLength }
+          : {}),
       });
     }
   }
@@ -81,13 +92,20 @@ function mergeModelSpecs(
       (left, right) => (right.created ?? 0) - (left.created ?? 0),
     );
   }
-  return orderedModels.map(({ id }) => staticModelsById.get(id) ?? { id });
+  return orderedModels.map(
+    ({ id, contextLength }) =>
+      staticModelsById.get(id) ??
+      (contextLength === undefined
+        ? { id }
+        : { id, contextWindowSize: contextLength }),
+  );
 }
 
 export async function discoverProviderModels({
   baseUrl,
   apiKey,
   staticModels,
+  modelListPath = '/models',
   signal,
 }: DiscoverProviderModelsOptions): Promise<ModelSpec[] | null> {
   const normalizedBaseUrl = baseUrl.trim();
@@ -97,7 +115,7 @@ export async function discoverProviderModels({
   }
 
   try {
-    const modelsUrl = `${normalizedBaseUrl.replace(/\/+$/, '')}/models`;
+    const modelsUrl = `${normalizedBaseUrl.replace(/\/+$/, '')}/${modelListPath.replace(/^\/+/, '')}`;
     const result = await fetchWithPolicy(modelsUrl, {
       timeoutMs: DISCOVERY_TIMEOUT_MS,
       maxBytes: DISCOVERY_MAX_BYTES,
