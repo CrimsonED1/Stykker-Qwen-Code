@@ -295,13 +295,14 @@ describe('DefaultOpenAICompatibleProvider', () => {
     });
 
     it('forwards a parameterless tool without a parameters key', () => {
-      // Negative pin for the MiniMax-only scoping in minimax.ts: the default
-      // provider must not synthesize a schema for zero-argument tools.
-      // converter.ts deliberately omits `parameters` for them (#11431), and
-      // the endpoints #10080 was written for (llama.cpp, LM Studio, vLLM)
-      // reject the empty-object shape. Assert on the serialized body because
-      // a converter-shaped tool carries `parameters: undefined` present,
-      // which JSON.stringify drops — matching what actually ships.
+      // Negative pin for the provider-scoped injection (minimax.ts, and the
+      // OpenRouter gate below): every other endpoint must keep the converter's
+      // omission. converter.ts deliberately omits `parameters` for declared
+      // empty argument lists (#11431), and the endpoints #10080 was written
+      // for (llama.cpp, LM Studio, vLLM) reject the empty-object shape.
+      // Assert on the serialized body because a converter-shaped tool carries
+      // `parameters: undefined` present, which JSON.stringify drops — matching
+      // what actually ships.
       const result = build({
         model: 'some-model',
         messages: [{ role: 'user', content: 'Hello' }],
@@ -314,6 +315,108 @@ describe('DefaultOpenAICompatibleProvider', () => {
       });
 
       expect(JSON.stringify(result.tools)).not.toContain('"parameters"');
+    });
+
+    describe('on the OpenRouter wire', () => {
+      const noArgsTool = () => ({
+        type: 'function' as const,
+        function: { name: 'get_goal', description: 'd' },
+      });
+      const openRouter = (extra: Record<string, unknown> = {}) =>
+        providerWith({ baseUrl: 'https://openrouter.ai/api/v1', ...extra });
+
+      it('injects an empty schema on zero-argument tools', () => {
+        const result = build(
+          hello('stealth/space-bunny-alpha', { tools: [noArgsTool()] }),
+          openRouter(),
+        );
+
+        expect(result.tools).toEqual([
+          {
+            type: 'function',
+            function: {
+              name: 'get_goal',
+              description: 'd',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        ]);
+      });
+
+      it('injects the schema when the converter left parameters present-but-undefined', () => {
+        // converter.ts emits parameterless tools with `parameters: undefined`
+        // (key present); the injection predicate must test the value, or the
+        // production shape stops receiving the fix.
+        const result = build(
+          hello('stealth/space-bunny-alpha', {
+            tools: [
+              {
+                type: 'function',
+                function: {
+                  name: 'list_agents',
+                  description: 'd',
+                  parameters: undefined,
+                } as unknown as OpenAI.Chat.ChatCompletionTool,
+              },
+            ],
+          }),
+          openRouter(),
+        );
+
+        expect(
+          JSON.parse(JSON.stringify(result.tools))[0].function.parameters,
+        ).toEqual({ type: 'object', properties: {} });
+      });
+
+      it('passes a tool with a declared schema through unchanged', () => {
+        const schema = {
+          type: 'object',
+          properties: { path: { type: 'string' } },
+          required: ['path'],
+        };
+
+        const result = build(
+          hello('stealth/space-bunny-alpha', {
+            tools: [
+              {
+                type: 'function',
+                function: {
+                  name: 'read_file',
+                  description: 'd',
+                  parameters: schema,
+                },
+              },
+            ],
+          }),
+          openRouter(),
+        );
+
+        expect(result.tools).toEqual([
+          {
+            type: 'function',
+            function: {
+              name: 'read_file',
+              description: 'd',
+              parameters: schema,
+            },
+          },
+        ]);
+      });
+
+      it('leaves a request without tools alone', () => {
+        const result = build(hello('stealth/space-bunny-alpha'), openRouter());
+
+        expect(result.tools).toBeUndefined();
+      });
+
+      it('does not fire on a look-alike host', () => {
+        const result = build(
+          hello('stealth/space-bunny-alpha', { tools: [noArgsTool()] }),
+          openRouter({ baseUrl: 'https://openrouter.ai.evil.com/v1' }),
+        );
+
+        expect(JSON.stringify(result.tools)).not.toContain('"parameters"');
+      });
     });
 
     it.each([

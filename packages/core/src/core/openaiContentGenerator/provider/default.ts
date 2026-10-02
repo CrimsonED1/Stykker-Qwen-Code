@@ -20,6 +20,7 @@ import {
   isReasoningEffortPlaceholder,
 } from '../../reasoning-effort.js';
 import { isOpenRouterHostname } from './openrouter.js';
+import { ensureToolParameters } from './utils.js';
 import { resolveReasoningForModel } from '../../reasoning-overrides.js';
 import { createDebugLogger } from '../../../utils/debugLogger.js';
 import { buildSessionAwareFetch } from '../../outbound-session-id.js';
@@ -240,7 +241,25 @@ export class DefaultOpenAICompatibleProvider
       ...(extraBody ? extraBody : {}),
     };
     this.flattenGptReasoningEffort(result);
+    this.restoreParameterlessToolSchemas(result);
     return result;
+  }
+
+  /**
+   * OpenRouter rejects a function tool that carries no `parameters` at all
+   * (`JSON error injected into SSE stream`, before any tool call exists in the
+   * conversation), so zero-argument tools get an empty object schema here.
+   * OpenRouter requests flow through this provider, so the gate lives here
+   * rather than in a provider subclass; see `ensureToolParameters` for why it
+   * must stay at the wire boundary and out of the converter.
+   */
+  private restoreParameterlessToolSchemas(
+    body: OpenAI.Chat.ChatCompletionCreateParams,
+  ): void {
+    if (!body.tools || !isOpenRouterHostname(this.contentGeneratorConfig)) {
+      return;
+    }
+    body.tools = ensureToolParameters(body.tools);
   }
 
   protected flattenGptReasoningEffort(body: Record<string, unknown>): void {

@@ -28,6 +28,30 @@ export function ensureReasoningContentOnAssistantMessage(
   } as OpenAI.Chat.ChatCompletionMessageParam;
 }
 
+// Gates that require a function tool to always carry a schema reject a
+// parameterless tool outright (MiniMax `400 invalid params, function
+// parameters is empty (2013)`, #11834; OpenRouter `JSON error injected into
+// SSE stream`). converter.ts deliberately omits `parameters` for a declared
+// empty argument list (#11431) because the endpoints #10080 was written for
+// (llama.cpp, LM Studio, vLLM) reject the empty-object shape, so restore it
+// here at the wire boundary instead. The predicate tests the value, not key
+// presence: a converter-shaped tool carries `parameters: undefined` present.
+export function ensureToolParameters(
+  tools: OpenAI.Chat.ChatCompletionTool[],
+): OpenAI.Chat.ChatCompletionTool[] {
+  return tools.map((tool) =>
+    tool.function.parameters === undefined
+      ? {
+          ...tool,
+          function: {
+            ...tool.function,
+            parameters: { type: 'object', properties: {} },
+          },
+        }
+      : tool,
+  );
+}
+
 // Some strict OpenAI-compatible endpoints (Mistral, Cerebras) reject the
 // non-standard `reasoning_content` field on input with HTTP 400. Shared
 // conversation history must stay intact for providers that require the

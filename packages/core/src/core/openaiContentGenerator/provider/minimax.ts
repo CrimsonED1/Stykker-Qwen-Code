@@ -8,6 +8,7 @@ import type OpenAI from 'openai';
 import type { ContentGeneratorConfig } from '../../contentGenerator.js';
 import type { OpenAIResponseParsingOptions } from '../responseParsingOptions.js';
 import { DefaultOpenAICompatibleProvider } from './default.js';
+import { ensureToolParameters } from './utils.js';
 
 /** Well-known MiniMax API hostnames for exact matching. */
 const MINIMAX_KNOWN_HOSTS = ['api.minimaxi.com', 'api.minimax.io'] as const;
@@ -44,31 +45,18 @@ export class MiniMaxOpenAICompatibleProvider extends DefaultOpenAICompatibleProv
    * (#11834: `400 invalid params, function parameters is empty (2013)`), so
    * zero-argument tools get an empty object schema injected here.
    *
-   * This deliberately reverses the converter's invariant one layer down:
-   * converter.ts sets `parameters = undefined` for parameterless tools
-   * (#11431), because the default-provider endpoints #10080 was written for
-   * (llama.cpp, LM Studio, vLLM) reject the empty-object shape. Keep this
-   * MiniMax-scoped: do not hoist it into DefaultOpenAICompatibleProvider,
-   * and do not move it into the converter ahead of
-   * `relaxSchemaForFunctionCalling`, which strips empty `properties` and
-   * would emit the bare `{"type":"object"}` that #11410 reports as a 400.
+   * This deliberately reverses the converter's invariant one layer down;
+   * see `ensureToolParameters` for the reasoning and for why the injection
+   * must stay out of the converter.
    */
   override buildRequest(
     request: OpenAI.Chat.ChatCompletionCreateParams,
     userPromptId: string,
   ): OpenAI.Chat.ChatCompletionCreateParams {
     const baseRequest = super.buildRequest(request, userPromptId);
-    baseRequest.tools = baseRequest.tools?.map((tool) =>
-      tool.function.parameters === undefined
-        ? {
-            ...tool,
-            function: {
-              ...tool.function,
-              parameters: { type: 'object', properties: {} },
-            },
-          }
-        : tool,
-    );
+    if (baseRequest.tools) {
+      baseRequest.tools = ensureToolParameters(baseRequest.tools);
+    }
     return baseRequest;
   }
 
