@@ -48,6 +48,17 @@ if not exist "%NODE22%\node.exe" (
 
 rem --- 3. Desktop-Runtime aus dem Quellcode bauen ---
 set "PATH=%NODE22%;%PATH%"
+
+rem --- Version kennzeichnen: <version>+sky.<commit>[.dirty] ---
+rem Anzeige in "qwen --version" und unten in der Seitenleiste.
+for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -p "require('%SRC:\=/%package.json').version"`) do set "PKGVER=%%i"
+for /f "usebackq delims=" %%i in (`git -C "%SRC%." rev-parse --short^=7 HEAD`) do set "GITSHA=%%i"
+set "DIRTY="
+for /f "usebackq delims=" %%i in (`git -C "%SRC%." status --porcelain --untracked-files^=no`) do set "DIRTY=.dirty"
+set "QWEN_CODE_BUILD_VERSION=!PKGVER!+sky.!GITSHA!!DIRTY!"
+echo  Version: !QWEN_CODE_BUILD_VERSION!
+echo.
+
 echo [1/3] Baue CLI und Desktop-Runtime ... ^(dauert mehrere Minuten^)
 cd /d "%SRC%packages\desktop"
 call "%NODE22%\npm.cmd" run build:runtime --workspaces=false
