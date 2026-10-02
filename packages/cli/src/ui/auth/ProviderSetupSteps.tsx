@@ -620,6 +620,7 @@ function DiscoveringModelIdsStep({
       baseUrl,
       apiKey,
       staticModels: builtInModels,
+      modelListPath: config.modelListPath,
       signal: controller.signal,
     }).then((models) => {
       if (active) {
@@ -634,7 +635,7 @@ function DiscoveringModelIdsStep({
       active = false;
       controller.abort();
     };
-  }, [apiKey, baseUrl, config.models]);
+  }, [apiKey, baseUrl, config.modelListPath, config.models]);
 
   if (!snapshot) {
     return (

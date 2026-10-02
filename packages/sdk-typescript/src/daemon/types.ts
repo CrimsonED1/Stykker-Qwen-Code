@@ -5144,6 +5144,8 @@ export interface DaemonAuthProviderDescriptor {
   envKey?: string;
   models?: DaemonAuthProviderModel[];
   modelsEditable?: boolean;
+  /** `listAuthProviderModels` can list this provider's models. */
+  supportsModelDiscovery?: boolean;
   apiKeyPlaceholder?: string;
   documentationUrl?: string;
   showAdvancedConfig?: boolean;
@@ -5166,6 +5168,19 @@ export interface DaemonAuthProviderCatalog {
     description: string;
     providerIds: string[];
   }>;
+}
+
+export interface DaemonAuthProviderModelsRequest {
+  providerId: string;
+  /** One of the provider's preset base URLs; defaults to its only one. */
+  baseUrl?: string;
+  apiKey: string;
+}
+
+export interface DaemonAuthProviderModelsResult {
+  v: 1;
+  /** Models the key can use, or `null` when the provider listing failed. */
+  models: DaemonAuthProviderModel[] | null;
 }
 
 export interface DaemonAuthProviderInstallRequest {

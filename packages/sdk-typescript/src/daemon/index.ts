@@ -630,6 +630,8 @@ export type {
   DaemonAuthProviderInstallRequest,
   DaemonAuthProviderInstallResult,
   DaemonAuthProviderModel,
+  DaemonAuthProviderModelsRequest,
+  DaemonAuthProviderModelsResult,
   DaemonAuthDeviceFlowSdkStatus,
   DaemonAuthDeviceFlowSdkErrorKind,
   DaemonAuthProviderStatus,

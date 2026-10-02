@@ -19,10 +19,17 @@ export const openRouterProvider: ProviderConfig = {
   baseUrl: OPENROUTER_BASE_URL,
   envKey: OPENROUTER_ENV_KEY,
   models: [
-    { id: 'z-ai/glm-4.5-air:free', contextWindowSize: 128000 },
-    { id: 'openai/gpt-oss-120b:free', contextWindowSize: 131072 },
+    { id: 'qwen/qwen3.8-27b:free', contextWindowSize: 262144 },
+    {
+      id: 'nvidia/nemotron-3-super-120b-a12b:free',
+      contextWindowSize: 262144,
+    },
   ],
   modelsEditable: true,
+  supportsModelDiscovery: true,
+  // `/models` is the public catalog; `/models/user` applies the key's
+  // provider and guardrail restrictions, so it lists only usable models.
+  modelListPath: '/models/user',
   modelNamePrefix: 'OpenRouter',
   ownsModel: (model) => {
     if (model.envKey !== OPENROUTER_ENV_KEY) return false;

@@ -160,6 +160,8 @@ export type {
   DaemonAuthProviderInstallResult,
   DaemonModelProviderRuntimeSyncResult,
   DaemonAuthProviderModel,
+  DaemonAuthProviderModelsRequest,
+  DaemonAuthProviderModelsResult,
   DaemonContextCategoryBreakdown,
   DaemonContextFileScope,
   DaemonContextMemoryDetail,

@@ -13,6 +13,7 @@ import {
   type DaemonAuthProviderCatalog,
   type DaemonAuthProviderDescriptor,
   type DaemonAuthProviderInstallRequest,
+  type DaemonAuthProviderModel,
 } from '@qwen-code/web-shell/daemon-react-sdk';
 import { useI18n } from '../../i18n';
 import { useExternalLinkOpener } from '../../hooks/useExternalLinkOpener';
@@ -185,6 +186,13 @@ export function AuthMessage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The provider's listing for the entered key, tagged with the request that
+  // produced it so revisiting the step reuses it instead of refetching.
+  const [discovery, setDiscovery] = useState<{
+    requestKey: string;
+    models: DaemonAuthProviderModel[] | null;
+  } | null>(null);
+  const [modelQuery, setModelQuery] = useState('');
 
   useEffect(() => {
     workspaceActions
@@ -246,6 +254,68 @@ export function AuthMessage({
 
   const [optionIndex, setOptionIndex] = useState(0);
 
+  const discoveryRequestKey =
+    currentStep === 'models' &&
+    provider?.supportsModelDiscovery &&
+    apiKey.trim()
+      ? JSON.stringify([provider.id, baseUrl, apiKey])
+      : null;
+  const discoveredModels =
+    discovery && discovery.requestKey === discoveryRequestKey
+      ? discovery.models
+      : undefined;
+
+  useEffect(() => {
+    if (
+      !provider ||
+      !discoveryRequestKey ||
+      discovery?.requestKey === discoveryRequestKey
+    ) {
+      return;
+    }
+    let active = true;
+    workspaceActions
+      .listAuthProviderModels({ providerId: provider.id, baseUrl, apiKey })
+      .then(
+        (result) => result.models,
+        () => null,
+      )
+      .then((served) => {
+        if (!active) return;
+        setDiscovery({ requestKey: discoveryRequestKey, models: served });
+        if (!served) return;
+        // Drop untouched preset defaults the key cannot use; keep anything
+        // the user typed.
+        const servedIds = new Set(served.map((model) => model.id));
+        setModels((current) =>
+          current === modelIds(provider)
+            ? normalizeModelIds(current)
+                .filter((id) => servedIds.has(id))
+                .join(', ')
+            : current,
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [
+    apiKey,
+    baseUrl,
+    discovery?.requestKey,
+    discoveryRequestKey,
+    provider,
+    workspaceActions,
+  ]);
+
+  const toggleModel = useCallback((id: string, checked: boolean) => {
+    setModels((current) => {
+      const ids = normalizeModelIds(current).filter((item) => item !== id);
+      if (checked) ids.push(id);
+      return ids.join(', ');
+    });
+    setError(null);
+  }, []);
+
   useEffect(() => {
     if (currentStep === 'wireApi') {
       setOptionIndex(wireApi === 'responses' ? 1 : 0);
@@ -283,6 +353,7 @@ export function AuthMessage({
       }
       setApiKey('');
       setModels(modelIds(nextProvider));
+      setModelQuery('');
       setThinking(false);
       setModality(false);
       setModalityImage(true);
@@ -731,6 +802,75 @@ export function AuthMessage({
     </div>
   );
 
+  const renderDiscoveredModels = () => {
+    if (discoveredModels === undefined) {
+      return <div className={styles.muted}>{t('auth.models.loading')}</div>;
+    }
+    if (discoveredModels === null) {
+      return <div className={styles.muted}>{t('auth.models.unavailable')}</div>;
+    }
+    const selected = new Set(normalizeModelIds(models));
+    const query = modelQuery.trim().toLowerCase();
+    const visible = query
+      ? discoveredModels.filter((model) =>
+          model.id.toLowerCase().includes(query),
+        )
+      : discoveredModels;
+    return (
+      <div className={styles.modelPicker}>
+        <div className={styles.muted}>
+          {t('auth.models.available', { count: discoveredModels.length })}
+        </div>
+        <input
+          className={styles.input}
+          type="search"
+          value={modelQuery}
+          aria-label={t('auth.models.searchPlaceholder')}
+          placeholder={t('auth.models.searchPlaceholder')}
+          disabled={saving}
+          onChange={(event) => setModelQuery(event.target.value)}
+          onKeyDown={(event) => {
+            // Enter in the filter must not submit the step.
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+        />
+        <div className={styles.modelList}>
+          {visible.length === 0 ? (
+            <div className={styles.muted}>{t('auth.models.noMatch')}</div>
+          ) : (
+            visible.map((model) => {
+              const checkboxId = `${fieldId}-model-${model.id}`;
+              return (
+                <Field orientation="horizontal" key={model.id}>
+                  <Checkbox
+                    id={checkboxId}
+                    checked={selected.has(model.id)}
+                    disabled={saving}
+                    onCheckedChange={(value) =>
+                      toggleModel(model.id, value === true)
+                    }
+                  />
+                  <FieldLabel htmlFor={checkboxId}>
+                    {model.id}
+                    {model.contextWindowSize !== undefined && (
+                      <span className={styles.muted}>
+                        {' '}
+                        {Math.round(model.contextWindowSize / 1000)}k
+                      </span>
+                    )}
+                  </FieldLabel>
+                </Field>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderStep = () => {
     if (!provider || !currentStep) return null;
     if (currentStep === 'protocol') {
@@ -859,6 +999,7 @@ export function AuthMessage({
             }}
             autoFocus
           />
+          {discoveryRequestKey && renderDiscoveredModels()}
         </>
       );
     }

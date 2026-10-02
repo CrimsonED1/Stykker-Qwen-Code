@@ -8,6 +8,7 @@ import type { Application, RequestHandler } from 'express';
 import {
   ALL_PROVIDERS,
   ProviderInstallError,
+  discoverProviderModels,
   resolveModelProtocol,
 } from '@qwen-code/qwen-code-core';
 import { writeStderrLine } from '../../utils/stdioHelpers.js';
@@ -23,6 +24,8 @@ import { isServeDebugMode } from '../debug-mode.js';
 import {
   buildAuthProviderCatalog,
   parseAuthProviderInstallRequest,
+  parseAuthProviderModelsRequest,
+  toAuthProviderModel,
 } from '../server/auth-provider-helpers.js';
 import type { SendBridgeError } from '../server/error-response.js';
 import { parseClientIdHeader, safeBody } from '../server/request-helpers.js';
@@ -30,6 +33,7 @@ import { sendGenerationClosedError } from '../workspace-route-runtime.js';
 import type {
   ServeAuthProviderInstallRequest,
   ServeAuthProviderInstallResult,
+  ServeAuthProviderModelsResult,
   ServeModelProviderRuntimeSyncResult,
 } from '../types.js';
 
@@ -299,6 +303,37 @@ export function registerWorkspaceAuthRoutes(
   app.get('/workspace/auth/providers', (_req, res) => {
     res.status(200).json(buildAuthProviderCatalog(boundWorkspace));
   });
+
+  // Lists the models an entered key may use, for the setup wizard's model
+  // step. The key is only forwarded to the provider's preset endpoint and is
+  // never logged or echoed; a failed listing returns `models: null` so the
+  // client falls back to manual entry.
+  app.post(
+    '/workspace/auth/provider/models',
+    mutate({ strict: true }),
+    async (req, res) => {
+      const parsed = parseAuthProviderModelsRequest(safeBody(req));
+      if (!parsed.ok) {
+        res.status(400).json({ error: parsed.error, code: parsed.code });
+        return;
+      }
+      const { provider, baseUrl, apiKey } = parsed.value;
+      const controller = new AbortController();
+      res.on('close', () => controller.abort());
+      const models = await discoverProviderModels({
+        baseUrl,
+        apiKey,
+        staticModels: provider.models ?? [],
+        modelListPath: provider.modelListPath,
+        signal: controller.signal,
+      });
+      const body: ServeAuthProviderModelsResult = {
+        v: 1,
+        models: models ? models.map(toAuthProviderModel) : null,
+      };
+      res.status(200).json(body);
+    },
+  );
 
   app.post(
     '/workspace/auth/provider',

@@ -62,6 +62,11 @@ describe('openRouterProvider', () => {
     ).toBe(false);
   });
 
+  it('discovers models from the key-scoped catalog', () => {
+    expect(openRouterProvider.supportsModelDiscovery).toBe(true);
+    expect(openRouterProvider.modelListPath).toBe('/models/user');
+  });
+
   it('declares customHeaders for attribution', () => {
     expect(openRouterProvider.customHeaders).toEqual({
       'HTTP-Referer': 'https://github.com/QwenLM/qwen-code.git',

@@ -77,6 +77,13 @@ export interface ProviderConfig {
   /** Load the account's current model recommendations from `/models`. */
   supportsModelDiscovery?: boolean;
 
+  /**
+   * Catalog path appended to the base URL for model discovery. Defaults to
+   * `/models`; set it when the provider serves the key-scoped catalog
+   * elsewhere.
+   */
+  modelListPath?: string;
+
   /** Display name prefix for model entries, or a function of baseUrl. */
   modelNamePrefix: string | ((baseUrl: string) => string);
 
