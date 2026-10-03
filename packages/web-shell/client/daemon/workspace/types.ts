@@ -58,6 +58,8 @@ import type {
   DaemonWorkspaceAcpPreheatResult,
   DaemonWorkspaceEnvStatus,
   DaemonWorkspaceExtensionsStatus,
+  DaemonWorkspaceExtensionSummaries,
+  DaemonExtensionEntry,
   DaemonWorkspaceFile,
   DaemonWorkspaceFileBytes,
   DaemonWorkspaceFileEditRequest,
@@ -541,6 +543,8 @@ export interface DaemonWorkspaceActions {
 
   // Extensions
   loadExtensionsStatus(): Promise<DaemonWorkspaceExtensionsStatus>;
+  loadExtensionSummaries(): Promise<DaemonWorkspaceExtensionSummaries>;
+  loadExtensionDetails(name: string): Promise<DaemonExtensionEntry>;
 
   // Tools
   preheatAcp(timeoutMs?: number): Promise<DaemonWorkspaceAcpPreheatResult>;
