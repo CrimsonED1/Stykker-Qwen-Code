@@ -1,0 +1,28 @@
+/* Merge state next to the session row's worktree/branch glyph. Colors follow
+   the SessionPrStateIcon convention so both state icons read as one family:
+   accent = contained in the base, warning = attention, muted = nothing to do.
+   The class is doubled because consumers like `.sessionDetailsRow svg` set a
+   default muted icon color at specificity (0,1,1); these rules must outrank it. */
+
+.mergeStateUnmerged.mergeStateUnmerged {
+  color: var(--warning-color, #f59e0b);
+}
+
+.mergeStateMerged.mergeStateMerged {
+  color: var(--color-accent-fg, #8b5cf6);
+}
+
+/* On the base branch itself: present but unremarkable, so it stays muted. */
+.mergeStateOnMain.mergeStateOnMain {
+  color: var(--muted-foreground, #6b7280);
+}
+
+/* A repository without a remote cannot be checked — muted, never green. */
+.mergeStateNoRemote.mergeStateNoRemote {
+  color: var(--muted-foreground, #6b7280);
+}
+
+/* The state is older than it may be presented as current. */
+.mergeStateStale.mergeStateStale {
+  color: var(--muted-foreground, #6b7280);
+}
