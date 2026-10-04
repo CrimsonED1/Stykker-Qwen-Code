@@ -325,3 +325,50 @@ describe('Local Control routes', () => {
     expect(writeStdoutLineSafe).not.toHaveBeenCalled();
   });
 });
+
+describe('Local Control state persistence', () => {
+  it('records enable with its address and disable for the next launch', async () => {
+    const app = express();
+    const persistState = vi.fn(async () => {});
+    registerWorkspaceLocalControlRoutes(app, {
+      service: {
+        enable: vi.fn(async () => ({
+          active: true,
+          interfaceName: 'Tailscale',
+          address: '100.64.0.33',
+        })),
+        disable: vi.fn(async () => ({ active: false })),
+      } as unknown as LocalControlService,
+      mutate: () => (_req, _res, next) => next(),
+      safeBody: () => ({ address: '100.64.0.33' }),
+      persistState,
+    });
+
+    await request(app).post('/workspace/local-control/enable').expect(200);
+    expect(persistState).toHaveBeenLastCalledWith({
+      enabled: true,
+      address: '100.64.0.33',
+    });
+
+    await request(app).post('/workspace/local-control/disable').expect(200);
+    expect(persistState).toHaveBeenLastCalledWith({ enabled: false });
+  });
+
+  it('does not record a failed enable', async () => {
+    const app = express();
+    const persistState = vi.fn(async () => {});
+    registerWorkspaceLocalControlRoutes(app, {
+      service: {
+        enable: vi.fn(async () => {
+          throw new InvalidLocalControlTargetError();
+        }),
+      } as unknown as LocalControlService,
+      mutate: () => (_req, _res, next) => next(),
+      safeBody: () => ({}),
+      persistState,
+    });
+
+    await request(app).post('/workspace/local-control/enable').expect(400);
+    expect(persistState).not.toHaveBeenCalled();
+  });
+});

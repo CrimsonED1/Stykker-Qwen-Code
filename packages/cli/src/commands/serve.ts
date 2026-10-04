@@ -119,6 +119,40 @@ async function startLocalControl(
 }
 
 /**
+ * Turn Local Control back on when the operator left it on before the desktop
+ * app last quit. The restored listener mints a fresh pairing token, so a
+ * paired device scans the new QR; the address choice (LAN or tailnet) is kept.
+ * Best-effort: a missing network or address only logs.
+ */
+export async function restoreLocalControl(
+  handle: RunHandle,
+  readState?: () => Promise<{ enabled: boolean; address?: string } | undefined>,
+): Promise<void> {
+  try {
+    const state = readState
+      ? await readState()
+      : await (
+          await import('../serve/local-control/persisted-state.js')
+        ).readLocalControlState();
+    if (!state?.enabled) return;
+    await handle.runtimeReady;
+    if (!handle.webShellMounted) return;
+    const service = handle.getLocalControl();
+    if (!service) return;
+    const status = await service.enable(
+      state.address ? { address: state.address } : {},
+    );
+    writeStderrLine(
+      `qwen serve: Local Control restored on ${status.interfaceName ?? 'LAN'} (${status.address ?? 'unknown'}).`,
+    );
+  } catch (err) {
+    writeStderrLine(
+      `qwen serve: Local Control was on before but could not be restored: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+/**
  * Open the Web Shell in a browser once the daemon is listening. Extracted from
  * the `serve` handler so it is unit-testable. Best-effort:
  *  - gated on `--open` and the UI actually being mounted
@@ -1203,6 +1237,9 @@ export const serveCommand: CommandModule<unknown, ServeArgs> = {
           await handle.close().catch(() => undefined);
           throw err;
         }
+      } else if (process.env['QWEN_CODE_DESKTOP'] === '1') {
+        // Not awaited: restoring must never delay or fail the desktop launch.
+        void restoreLocalControl(handle);
       }
       await maybeOpenWebShellBrowser(handle, open, openWithAuth);
     } catch (err) {

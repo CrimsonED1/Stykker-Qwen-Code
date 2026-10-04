@@ -11,6 +11,27 @@ export interface LanCandidate {
   readonly interfaceName: string;
   /** IPv4 literal to bind and advertise. */
   readonly address: string;
+  /** Set for a Tailscale tailnet address; absent for a physical LAN. */
+  readonly kind?: 'tailscale';
+}
+
+/** Tailscale assigns node addresses from the 100.64.0.0/10 CGNAT range. */
+function isTailscaleIpv4(address: string): boolean {
+  const octets = address.split('.').map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o))) {
+    return false;
+  }
+  const [a, b] = octets;
+  return a === 100 && b >= 64 && b <= 127;
+}
+
+/**
+ * A tailnet is the one VPN that keeps Local Control's "only my devices"
+ * scope: every peer is a device the owner signed in. It is offered as an
+ * explicit choice, never picked automatically.
+ */
+function isTailscaleInterface(interfaceName: string): boolean {
+  return /^tailscale/i.test(interfaceName);
 }
 
 /**
@@ -65,20 +86,35 @@ export function isSoftwareNetwork(interfaceName: string): boolean {
   );
 }
 
-/** Every private/link-local IPv4 the host currently has, sorted for stable output. */
+/**
+ * Every private/link-local IPv4 the host currently has, sorted for stable
+ * output, followed by Tailscale tailnet addresses.
+ */
 export function listLanCandidates(
   interfaces = networkInterfaces(),
 ): LanCandidate[] {
   const candidates: LanCandidate[] = [];
+  const tailnet: LanCandidate[] = [];
   for (const [interfaceName, addresses] of Object.entries(interfaces).sort()) {
-    if (isSoftwareNetwork(interfaceName)) continue;
+    const tailscale = isTailscaleInterface(interfaceName);
+    if (!tailscale && isSoftwareNetwork(interfaceName)) continue;
     for (const address of addresses ?? []) {
       if (address.family !== 'IPv4' || address.internal) continue;
+      if (tailscale) {
+        if (isTailscaleIpv4(address.address)) {
+          tailnet.push({
+            interfaceName,
+            address: address.address,
+            kind: 'tailscale',
+          });
+        }
+        continue;
+      }
       if (!isLanIpv4(address.address)) continue;
       candidates.push({ interfaceName, address: address.address });
     }
   }
-  return candidates;
+  return [...candidates, ...tailnet];
 }
 
 export class NoLanInterfaceError extends Error {
@@ -137,6 +173,9 @@ export function selectLanAddress(
     if (!match) throw new UnknownLanInterfaceError(preferredAddress);
     return match;
   }
-  if (candidates.length > 1) throw new AmbiguousLanInterfaceError(candidates);
-  return candidates[0];
+  // A tailnet address needs an explicit choice; a single physical LAN keeps
+  // being picked on its own.
+  const lan = candidates.filter((c) => c.kind !== 'tailscale');
+  if (lan.length !== 1) throw new AmbiguousLanInterfaceError(candidates);
+  return lan[0];
 }

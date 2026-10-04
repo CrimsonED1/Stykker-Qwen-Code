@@ -53,6 +53,7 @@ import {
   LocalControlService,
 } from './local-control/index.js';
 import { registerWorkspaceLocalControlRoutes } from './routes/workspace-local-control.js';
+import { writeLocalControlState } from './local-control/persisted-state.js';
 import { registerWebShellPairingRoutes } from './routes/web-shell-pairing.js';
 import type {
   DeviceFlowProvider,
@@ -4028,6 +4029,11 @@ export function createServeApp(
     webShellAvailable: Boolean(webShellDir),
     primaryBindHostname: opts.hostname,
     trustedLoopbackMode,
+    // Only the desktop app restores Local Control on launch (see
+    // `restoreLocalControl` in commands/serve.ts).
+    ...(process.env['QWEN_CODE_DESKTOP'] === '1'
+      ? { persistState: (state) => writeLocalControlState(state) }
+      : {}),
   });
 
   // Web Shell SPA deep-link fallback — registered AFTER every API route (and

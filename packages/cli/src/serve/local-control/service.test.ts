@@ -108,6 +108,49 @@ describe('LocalControlService', () => {
     await service.disable();
   });
 
+  it('advertises the MagicDNS name for a tailnet address and binds the IP', async () => {
+    const { selectLanAddress } = await import('./lan-interfaces.js');
+    const tailnet = {
+      interfaceName: 'Tailscale',
+      address: '127.0.0.1',
+      kind: 'tailscale' as const,
+    };
+    vi.mocked(selectLanAddress)
+      .mockReturnValueOnce(tailnet)
+      .mockReturnValueOnce(tailnet);
+    const port = await unusedPort();
+    const origins = new MutableOriginAllowlist({
+      allowAny: false,
+      origins: new Set(),
+    });
+    const resolveTailnetHost = vi
+      .fn<() => Promise<string | undefined>>()
+      .mockResolvedValueOnce('crim10.tail85052b.ts.net')
+      .mockResolvedValueOnce(undefined);
+    const service = new LocalControlService({
+      app: express(),
+      credentials: new CredentialStore(),
+      originAllowlist: origins,
+      attachWebSocket: () => {},
+      detachWebSocket: () => {},
+      getPort: () => port,
+      resolveTailnetHost,
+    });
+
+    const named = await service.enable();
+    expect(new URL(named.url!).host).toBe(`crim10.tail85052b.ts.net:${port}`);
+    expect(named.address).toBe('127.0.0.1');
+    expect(origins.allows(`http://crim10.tail85052b.ts.net:${port}`)).toBe(
+      true,
+    );
+    await service.disable();
+
+    // Without a MagicDNS name the tailnet IP is advertised as-is.
+    const bare = await service.enable();
+    expect(new URL(bare.url!).host).toBe(`127.0.0.1:${port}`);
+    await service.disable();
+  });
+
   it('orders disable after an in-flight enable', async () => {
     const port = await unusedPort();
     const service = new LocalControlService({

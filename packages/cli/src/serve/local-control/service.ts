@@ -15,6 +15,7 @@ import type { MutableOriginAllowlist } from '../auth.js';
 import type { CredentialStore } from './credentials.js';
 import { tagListener } from './listener-identity.js';
 import { selectLanAddress, type LanCandidate } from './lan-interfaces.js';
+import { resolveTailscaleDnsName } from './tailscale-dns.js';
 import { writeStderrLine } from '../../utils/stdioHelpers.js';
 
 /** Key under which the LAN origin is registered in the mutable CORS allowlist. */
@@ -89,6 +90,11 @@ export interface LocalControlServiceDeps {
   detachWebSocket(server: Server): void;
   /** Port to advertise. Read lazily — the primary listener may be on port 0. */
   getPort(): number;
+  /**
+   * Host name to advertise for a Tailscale address instead of the raw IP.
+   * Defaults to the node's MagicDNS name; `undefined` keeps the IP.
+   */
+  resolveTailnetHost?(): Promise<string | undefined>;
   /**
    * `--tls-cert` / `--tls-key` paths, when the daemon was started with them.
    *
@@ -168,7 +174,15 @@ export class LocalControlService {
 
     const selected = selectLanAddress(options.address);
     const port = this.#deps.getPort();
-    const authority = `${selected.address}:${port}`;
+    // Bind the tailnet IP but advertise the MagicDNS name: it is what the
+    // browser shows and what a `tailscale cert` certificate is issued for.
+    const host =
+      selected.kind === 'tailscale'
+        ? ((await (
+            this.#deps.resolveTailnetHost ?? resolveTailscaleDnsName
+          )()) ?? selected.address)
+        : selected.address;
+    const authority = `${host}:${port}`;
     const token = mintPairingToken();
 
     const tls = this.#deps.tlsPaths;
