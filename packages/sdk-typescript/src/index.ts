@@ -131,6 +131,7 @@ export {
   type DaemonWorkspaceCapability,
   type DaemonWorkspaceUpdate,
   type DaemonWorkspaceGitStatus,
+  type DaemonWorkspaceMergeState,
   type DaemonGitOperation,
   type DaemonWorkspaceGitDiff,
   type DaemonWorkspaceGitDiffFile,

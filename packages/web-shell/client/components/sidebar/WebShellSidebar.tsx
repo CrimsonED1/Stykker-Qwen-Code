@@ -123,6 +123,15 @@ import {
 } from './workspaceExpansion';
 import { SessionGroupSection } from './SessionGroupSection';
 import { SessionDetailsTooltip } from './SessionDetailsTooltip';
+import {
+  SessionMergeStateIcon,
+  sessionMergeStateLabel,
+} from '../SessionMergeStateIcon';
+import {
+  ensureMergeStates,
+  mergeProbeCwd,
+  useMergeStates,
+} from './sessionMergeStates';
 import { groupSessionsByChannelType } from './channelSessionGroups';
 import {
   isPrimaryCollapsedSectionId,
@@ -3962,6 +3971,42 @@ export function WebShellSidebar({
     selectedSessionSource,
   ]);
 
+  const mergeStates = useMergeStates();
+
+  // One probe per distinct directory on screen, never per row: sessions of one
+  // workspace share a single fetch, and a worktree session probes its own
+  // checkout instead of inheriting the workspace's HEAD. The store dedupes
+  // in-flight requests, so a re-render mid-flight costs nothing.
+  useEffect(() => {
+    const probes = filteredSessions.flatMap((session) => {
+      const cwd = mergeProbeCwd(session, primaryWorkspaceCwd);
+      if (!cwd) return [];
+      const scope = resolveSessionWorkspaceScope(session);
+      // An unknown or untrusted workspace has no qualified route to ask, and
+      // an untrusted one must not have its git probed at all.
+      if (scope.kind === 'unknown' || scope.kind === 'untrusted') return [];
+      return [
+        {
+          cwd,
+          fetch: () =>
+            workspace.client
+              .workspaceByCwd(scope.cwd)
+              .workspaceGitMerge({ cwd }),
+        },
+      ] as const;
+    });
+    if (probes.length === 0) return;
+    const refresh = () => ensureMergeStates(probes);
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [
+    filteredSessions,
+    primaryWorkspaceCwd,
+    resolveSessionWorkspaceScope,
+    workspace.client,
+  ]);
+
   const channelCatalogLoaded = channelCatalogData !== undefined;
   const channelSessionSections = useMemo(
     () =>
@@ -4361,6 +4406,36 @@ export function WebShellSidebar({
       ) : session.branch ? (
         <GitBranchIcon aria-label={session.branch.name} />
       ) : null;
+      // Variant B: both git glyphs lead the row, the status cluster keeps the
+      // right edge. The status dot is absolutely positioned in the row's 26px
+      // reserve, so the first cell starts exactly where that dot ends.
+      const probeCwd = mergeProbeCwd(session, primaryWorkspaceCwd);
+      const mergeState = probeCwd ? mergeStates.get(probeCwd) : undefined;
+      const mergeLabel = mergeState
+        ? sessionMergeStateLabel(t, mergeState)
+        : undefined;
+      const leadIcons = (mergeState || gitIcon) && (
+        <span className={styles.sessionLeadIcons}>
+          {mergeState && (
+            <span
+              className={styles.sessionLeadIcon}
+              data-web-shell-session-merge-state={mergeState.kind}
+              aria-label={mergeLabel}
+              title={mergeLabel}
+            >
+              <SessionMergeStateIcon state={mergeState} />
+            </span>
+          )}
+          {gitIcon && (
+            <span
+              className={styles.sessionLeadIcon}
+              data-web-shell-session-git-icon
+            >
+              {gitIcon}
+            </span>
+          )}
+        </span>
+      );
       const scheduledTaskMarker = isScheduledTaskSession(session) ? (
         <span
           className={styles.sessionSourceIcon}
@@ -4422,6 +4497,9 @@ export function WebShellSidebar({
               measureSessionTitleScroll(event.currentTarget)
             }
           >
+            {/* Archived rows carry no status slot, so the lead icons take the
+                place its 26px reserve would have held. */}
+            {leadIcons}
             {isEditing ? (
               <form
                 className={styles.renameForm}
@@ -4460,9 +4538,6 @@ export function WebShellSidebar({
               }
             >
               {scheduledTaskMarker}
-              {gitIcon && (
-                <span className={styles.sessionGitIcon}>{gitIcon}</span>
-              )}
               {hasArchivedActions && (
                 <div
                   className={styles.sessionActions}
@@ -4693,6 +4768,7 @@ export function WebShellSidebar({
               />
             ) : null}
           </span>
+          {leadIcons}
           {isEditing && showRename ? (
             <form
               className={styles.renameForm}
@@ -4762,8 +4838,6 @@ export function WebShellSidebar({
                         : t('sidebar.running')
                     }
                   />
-                ) : !attention && gitIcon ? (
-                  <span className={styles.sessionGitIcon}>{gitIcon}</span>
                 ) : null}
                 {(showPin ||
                   showArchive ||
@@ -5004,6 +5078,8 @@ export function WebShellSidebar({
       getActiveExportScope,
       getIdentityForSession,
       getSessionWorkspaceCwd,
+      mergeStates,
+      primaryWorkspaceCwd,
       handleArchive,
       handleDeleteSession,
       handleExportSession,

@@ -6,6 +6,7 @@
 
 import type { Application } from 'express';
 import { getGitWorkingTreeStatus } from '@qwen-code/qwen-code-core';
+import { getMergeState } from '@qwen-code/qwen-code-core/utils/git-merge-state.js';
 import type { AcpSessionBridge } from '../acp-session-bridge.js';
 import type { SendBridgeError } from '../server/error-response.js';
 import type { WorkspaceGitState } from '../workspace-git-state.js';
@@ -158,6 +159,41 @@ export function registerWorkspaceQualifiedGitRoutes(
           ...(worktreeSupported !== undefined ? { worktreeSupported } : {}),
         });
       }
+    } catch (err) {
+      deps.sendBridgeError(res, err, { route });
+    }
+  });
+
+  // The sidebar renders a merge-state glyph on every visible session row, so
+  // this cannot reuse `/git`: that route runs `git status` (an uncached
+  // `git status` for worktree cwds), which is far too much to pay per row.
+  // `getMergeState` caches per git root and revalidates with a single
+  // `git rev-parse`, so the whole sidebar costs one cheap spawn per distinct
+  // repository it shows.
+  app.get('/workspaces/:workspace/git/merge', async (req, res) => {
+    const runtime = resolveTrustedRuntime(deps.workspaceRegistry, req, res);
+    if (!runtime) return;
+    const route = 'GET /workspaces/:workspace/git/merge';
+    try {
+      runtime.generationGuard?.assertOpen();
+    } catch (err) {
+      deps.sendBridgeError(res, err, { route });
+      return;
+    }
+    const gitCwd = await resolveSessionManagedGitCwdForRoute(
+      req,
+      res,
+      runtime,
+      route,
+      deps.sendBridgeError,
+    );
+    if (gitCwd === undefined) return;
+    try {
+      // No `wait` parameter on purpose: this row glyph is informational, and a
+      // fresh probe is never worth blocking the render path for.
+      const merge = getMergeState(gitCwd);
+      runtime.generationGuard?.assertOpen();
+      res.status(200).json(merge);
     } catch (err) {
       deps.sendBridgeError(res, err, { route });
     }

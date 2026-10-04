@@ -1232,12 +1232,7 @@ button.livePendingSession:hover {
 
 @supports (selector(:has(*))) {
   .sessionMetaSlot:not(
-    :has(
-      .sessionLoading,
-      .sessionAttention,
-      .sessionGitIcon,
-      .sessionSourceIcon
-    )
+    :has(.sessionLoading, .sessionAttention, .sessionSourceIcon)
   ) {
     padding-right: 10px;
   }
@@ -1262,19 +1257,34 @@ button.livePendingSession:hover {
   color: color-mix(in srgb, var(--agent-blue-500) 95%, var(--foreground));
 }
 
-.sessionGitIcon {
-  width: 28px;
-  height: 28px;
+/* Both git glyphs lead the row: merge state first, then worktree/branch.
+   18px cells, not the 28px trailing slot — two of them would cost the title
+   more width than the right-hand slot ever did. */
+.sessionLeadIcons {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sessionLeadIcon {
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--color-accent-fg, #8b5cf6);
 }
 
-.sessionGitIcon svg {
+.sessionLeadIcon svg {
   width: 14px;
   height: 14px;
   stroke-width: 1.6;
+}
+
+/* An empty cell keeps its width so the titles of merged and unmerged rows
+   stay on one axis instead of shuffling when a probe lands. */
+.sessionLeadIcon[data-web-shell-session-merge-state='not-a-repo'] {
+  visibility: hidden;
 }
 
 .sessionLoading {
@@ -1313,8 +1323,6 @@ button.livePendingSession:hover {
       min-width: var(--session-actions-width, 78px);
     }
 
-    .sessionMetaSlot:has(.sessionActions:focus-within) .sessionGitIcon,
-    .sessionMetaSlot:has([data-state='open']) .sessionGitIcon,
     .sessionMetaSlot:has(.sessionActions:focus-within) .sessionLoading,
     .sessionMetaSlot:has([data-state='open']) .sessionLoading,
     .sessionMetaSlot:has(.sessionActions:focus-within) .sessionAttention,
@@ -1338,9 +1346,7 @@ button.livePendingSession:hover {
     min-width: var(--session-actions-width, 78px);
   }
 
-  .sessionRow:hover:not(.runningSession) .sessionGitIcon,
   .sessionRow:hover:not(.runningSession) .sessionAttention,
-  .sessionMetaSlot:hover .sessionGitIcon,
   .sessionMetaSlot:hover .sessionLoading,
   .sessionMetaSlot:hover .sessionAttention {
     opacity: 0;

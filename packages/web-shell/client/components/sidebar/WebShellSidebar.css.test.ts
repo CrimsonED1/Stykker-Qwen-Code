@@ -91,7 +91,6 @@ describe('WebShellSidebar session row actions stylesheet', () => {
     expect(touchMedia).not.toMatch(/opacity:\s*0;/);
     expect(touchMedia).not.toMatch(/min-width:\s*var\(--session-actions-width/);
     for (const marker of [
-      'sessionGitIcon',
       'sessionLoading',
       'sessionAttention',
       'sessionSourceIcon',
@@ -116,7 +115,6 @@ describe('WebShellSidebar session row actions stylesheet', () => {
 
   it('hides the trailing markers whenever the overlay is revealed', () => {
     for (const marker of [
-      'sessionGitIcon',
       'sessionLoading',
       'sessionAttention',
       'sessionSourceIcon',
@@ -127,5 +125,14 @@ describe('WebShellSidebar session row actions stylesheet', () => {
         ),
       );
     }
+  });
+
+  it('leads the row with the two git glyphs instead of trailing one', () => {
+    // The old trailing slot is gone; if it ever comes back it would re-take
+    // 28px of title width that the two 18px lead cells no longer pay for.
+    expect(sidebarCss).not.toMatch(/\.sessionGitIcon/);
+    expect(sidebarCss).toMatch(/\.sessionLeadIcons\s*\{[^}]*flex:\s*0 0 auto;/);
+    expect(sidebarCss).toMatch(/\.sessionLeadIcon\s*\{[^}]*width:\s*18px;/);
+    expect(sidebarCss).toMatch(/\.sessionLeadIcon svg\s*\{[^}]*width:\s*14px;/);
   });
 });

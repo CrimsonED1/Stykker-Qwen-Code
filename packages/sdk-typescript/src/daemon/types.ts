@@ -344,6 +344,40 @@ export interface DaemonWorkspaceGitStatus {
   worktreeSupported?: boolean;
 }
 
+/**
+ * Where a session's branch stands relative to its remote base branch, as
+ * reported by `GET /workspaces/:workspace/git/merge`.
+ *
+ * `not-a-repo` and `no-remote` are reported rather than omitted: "there is no
+ * question to answer" and "we could not answer it" are different facts, and a
+ * glyph that claims "merged" without evidence is worse than no glyph.
+ */
+export interface DaemonWorkspaceMergeState {
+  /**
+   * - `not-a-repo`: the cwd is not inside a git repository — no glyph.
+   * - `no-remote`: no remote base branch is resolvable.
+   * - `on-main`: the cwd is on the base branch itself.
+   * - `unmerged`: HEAD carries commits the base branch lacks.
+   * - `merged`: the base branch already contains HEAD.
+   * - `unknown`: a git invocation failed; render as stale, never as merged.
+   */
+  kind:
+    | 'not-a-repo'
+    | 'no-remote'
+    | 'on-main'
+    | 'merged'
+    | 'unmerged'
+    | 'unknown';
+  /** Commits reachable from HEAD but not from the base ref. 0 unless known. */
+  ahead: number;
+  /** The comparison target, e.g. `origin/main`. Absent when unresolvable. */
+  baseRef?: string;
+  /** The branch component of {@link DaemonWorkspaceMergeState.baseRef}. */
+  baseBranch?: string;
+  /** Epoch ms when the state was computed. */
+  checkedAt: number;
+}
+
 /** One changed file in the working-tree-vs-HEAD diff file list. */
 export interface DaemonWorkspaceGitDiffFile {
   /** Repo-root-relative path (render after sanitizing — git allows odd bytes). */
