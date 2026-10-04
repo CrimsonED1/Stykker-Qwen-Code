@@ -538,6 +538,7 @@ export type {
   DaemonWorkspaceCapability,
   DaemonWorkspaceUpdate,
   DaemonWorkspaceGitStatus,
+  DaemonWorkspaceMergeState,
   DaemonGitOperation,
   DaemonWorkspaceGitDiff,
   DaemonWorkspaceGitDiffFile,

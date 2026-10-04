@@ -6,7 +6,7 @@
 
 import express from 'express';
 import request from 'supertest';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AcpSessionBridge } from '../acp-session-bridge.js';
 import { sendBridgeError } from '../server/error-response.js';
 import type { WorkspaceGitState } from '../workspace-git-state.js';
@@ -20,6 +20,11 @@ import {
   registerWorkspaceGitRoutes,
   registerWorkspaceQualifiedGitRoutes,
 } from './workspace-git.js';
+
+const getMergeState = vi.hoisted(() => vi.fn());
+vi.mock('@qwen-code/qwen-code-core/utils/git-merge-state.js', () => ({
+  getMergeState,
+}));
 
 function runtime(
   workspaceId: string,
@@ -247,6 +252,143 @@ describe('workspace Git routes', () => {
     expect(response.body).toMatchObject({
       error: 'qualified git failed',
       data: { reason: 'watcher' },
+    });
+  });
+
+  describe('merge state', () => {
+    beforeEach(() => {
+      getMergeState.mockReset();
+      getMergeState.mockReturnValue({
+        kind: 'unmerged',
+        ahead: 3,
+        baseRef: 'origin/skymain',
+        baseBranch: 'skymain',
+        checkedAt: 1_700_000_000_000,
+      });
+    });
+
+    function mergeApp(runtimes: WorkspaceRuntime[]): express.Application {
+      const app = express();
+      registerWorkspaceQualifiedGitRoutes(app, {
+        // The registry insists on exactly one primary runtime, so a case that
+        // only cares about a secondary registers a throwaway primary too.
+        workspaceRegistry: registry([
+          ...runtimes.filter((entry) => entry.primary),
+          ...(runtimes.some((entry) => entry.primary)
+            ? []
+            : [runtime('primary', '/work/primary', true)]),
+          ...runtimes.filter((entry) => !entry.primary),
+        ]),
+        gitState: { getStatus: vi.fn() } as unknown as WorkspaceGitState,
+        sendBridgeError,
+      });
+      return app;
+    }
+
+    it('reports the merge state of the selected workspace', async () => {
+      const primary = runtime('primary', '/work/main', true);
+
+      const response = await request(mergeApp([primary])).get(
+        '/workspaces/primary/git/merge',
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        kind: 'unmerged',
+        ahead: 3,
+        baseRef: 'origin/skymain',
+        baseBranch: 'skymain',
+        checkedAt: 1_700_000_000_000,
+      });
+      expect(getMergeState).toHaveBeenCalledWith('/work/main');
+    });
+
+    it('probes the resolved cwd, not the bound workspace by default', async () => {
+      const secondary = runtime('secondary', '/work/secondary', true);
+
+      const response = await request(mergeApp([secondary])).get(
+        '/workspaces/secondary/git/merge',
+      );
+
+      expect(response.status).toBe(200);
+      expect(getMergeState).toHaveBeenCalledWith('/work/secondary');
+    });
+
+    it('answers not-a-repo for a directory outside any repository', async () => {
+      getMergeState.mockReturnValue({
+        kind: 'not-a-repo',
+        ahead: 0,
+        checkedAt: 1_700_000_000_000,
+      });
+      const primary = runtime('primary', '/work/main', true);
+
+      const response = await request(mergeApp([primary])).get(
+        '/workspaces/primary/git/merge',
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({
+        kind: 'not-a-repo',
+        ahead: 0,
+        checkedAt: 1_700_000_000_000,
+      });
+    });
+
+    it('never runs the working-tree status for this route', async () => {
+      const getStatus = vi.fn();
+      const primary = runtime('primary', '/work/main', true);
+      const app = express();
+      registerWorkspaceQualifiedGitRoutes(app, {
+        workspaceRegistry: registry([primary]),
+        gitState: { getStatus } as unknown as WorkspaceGitState,
+        sendBridgeError,
+      });
+
+      await request(app).get('/workspaces/primary/git/merge');
+
+      // A sidebar row asks per visible session; a `git status` behind each of
+      // those is what this route exists to avoid.
+      expect(getStatus).not.toHaveBeenCalled();
+    });
+
+    it('rejects an untrusted workspace before probing Git', async () => {
+      const untrusted = runtime('untrusted', '/work/untrusted', false);
+
+      const response = await request(mergeApp([untrusted])).get(
+        '/workspaces/untrusted/git/merge',
+      );
+
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('untrusted_workspace');
+      expect(getMergeState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a closed generation before probing Git', async () => {
+      const generationGuard = createWorkspaceGenerationGuard();
+      generationGuard.close();
+      const secondary = {
+        ...runtime('secondary', '/work/secondary', true),
+        generationGuard,
+      };
+
+      const response = await request(mergeApp([secondary])).get(
+        '/workspaces/secondary/git/merge',
+      );
+
+      expect(response.status).toBe(503);
+      expect(response.body.code).toBe('workspace_runtime_unavailable');
+      expect(getMergeState).not.toHaveBeenCalled();
+    });
+
+    it('rejects a cwd outside the workspace before probing Git', async () => {
+      const primary = runtime('primary', '/work/main', true);
+
+      const response = await request(mergeApp([primary])).get(
+        '/workspaces/primary/git/merge?cwd=%2Fwork%2Fmain%2F..%2F..%2Fescape',
+      );
+
+      expect(response.status).toBe(400);
+      expect(getMergeState).not.toHaveBeenCalled();
     });
   });
 });

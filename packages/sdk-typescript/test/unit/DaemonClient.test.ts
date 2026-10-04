@@ -1993,6 +1993,32 @@ describe('DaemonClient', () => {
       expect(transportFetch).not.toHaveBeenCalled();
     });
 
+    it('requests merge state from its own route, not the Git status one', async () => {
+      const merge = {
+        kind: 'unmerged' as const,
+        ahead: 3,
+        baseRef: 'origin/skymain',
+        checkedAt: 1_700_000_000_000,
+      };
+      const { fetch, calls } = recordingFetch(() => jsonResponse(200, merge));
+      const client = new DaemonClient({ baseUrl: 'http://daemon', fetch });
+
+      await expect(
+        client.workspaceByCwd('/work/secondary').workspaceGitMerge(),
+      ).resolves.toEqual(merge);
+      await client
+        .workspaceByCwd('/work/secondary')
+        .workspaceGitMerge({ cwd: '/work/secondary/wt-1' });
+
+      expect(calls.map((call) => [call.method, call.url])).toEqual([
+        ['GET', 'http://daemon/workspaces/%2Fwork%2Fsecondary/git/merge'],
+        [
+          'GET',
+          'http://daemon/workspaces/%2Fwork%2Fsecondary/git/merge?cwd=%2Fwork%2Fsecondary%2Fwt-1',
+        ],
+      ]);
+    });
+
     it('builds Git status query strings from cwd/wait options', async () => {
       const status = {
         v: 1 as const,

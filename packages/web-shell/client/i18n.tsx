@@ -1813,6 +1813,16 @@ const EN: Messages = {
   'sidebar.newChat': 'New chat',
   'sidebar.newTask': 'New task',
   'sidebar.newWorktreeTask': 'New worktree task',
+  'sidebar.sessionMergeStateUnmerged': (v) =>
+    `${plural(v?.count, 'commit')} not in ${v?.base ?? 'the base branch'}`,
+  'sidebar.sessionMergeStateMerged': (v) =>
+    `fully in ${v?.base ?? 'the base branch'}`,
+  'sidebar.sessionMergeStateOnMain': (v) =>
+    `on ${v?.branch ?? 'the base branch'} — nothing to merge`,
+  'sidebar.sessionMergeStateNoRemote':
+    'no remote — merge status cannot be checked',
+  'sidebar.sessionMergeStateStale':
+    'merge status out of date — git probe failed',
   'sidebar.plugins': 'Plugins',
   'sidebar.channels': 'Channels',
   'sidebar.sessionSource': 'Session source',
@@ -6004,6 +6014,14 @@ const ZH: Messages = {
   'sidebar.newChat': '新对话',
   'sidebar.newTask': '新建任务',
   'sidebar.newWorktreeTask': '新建 Worktree 任务',
+  'sidebar.sessionMergeStateUnmerged': (v) =>
+    `${plural(v?.count, '个提交')}未合入 ${v?.base ?? '基准分支'}`,
+  'sidebar.sessionMergeStateMerged': (v) =>
+    `已完整合入 ${v?.base ?? '基准分支'}`,
+  'sidebar.sessionMergeStateOnMain': (v) =>
+    `位于 ${v?.branch ?? '基准分支'}，无需合并`,
+  'sidebar.sessionMergeStateNoRemote': '没有远程仓库，无法检查合并状态',
+  'sidebar.sessionMergeStateStale': '合并状态已过期 —— git 探测失败',
   'sidebar.plugins': '插件',
   'sidebar.channels': '频道',
   'sidebar.sessionSource': '会话来源',

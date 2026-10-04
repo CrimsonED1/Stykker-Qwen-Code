@@ -117,6 +117,7 @@ import type {
   DaemonWorkspaceAgentsStatus,
   DaemonWorkspaceEnvStatus,
   DaemonWorkspaceGitStatus,
+  DaemonWorkspaceMergeState,
   DaemonWorkspaceGitDiff,
   DaemonWorkspaceGitDiffHunks,
   DaemonGitLog,
@@ -7577,6 +7578,28 @@ export class WorkspaceDaemonClient {
       this.workspaceSelector,
       suffix,
       'GET /workspaces/:workspace/git',
+      { mode: 'rest' },
+    );
+  }
+
+  /**
+   * Merge state of the repository at `cwd` relative to its remote base branch.
+   *
+   * Separate from `workspaceGit` because the sidebar asks for it once per
+   * visible session row: this route spawns no `git status` and caches per git
+   * root on the daemon, where the working-tree route does neither.
+   */
+  workspaceGitMerge(opts?: {
+    cwd?: string;
+  }): Promise<DaemonWorkspaceMergeState> {
+    const params = new URLSearchParams();
+    if (opts?.cwd) params.set('cwd', opts.cwd);
+    const query = params.toString();
+    const suffix = query ? `/git/merge?${query}` : '/git/merge';
+    return this.client.workspaceJsonRequest<DaemonWorkspaceMergeState>(
+      this.workspaceSelector,
+      suffix,
+      'GET /workspaces/:workspace/git/merge',
       { mode: 'rest' },
     );
   }
