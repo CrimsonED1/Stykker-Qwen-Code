@@ -638,6 +638,15 @@ export async function tryRunServeFastPath(
     } catch {
       // Keep the warning best-effort, matching the yargs serve handler.
     }
+    // The desktop app launches through this fast path. `--local-control`
+    // never reaches it (it falls back to the yargs handler), so only the
+    // saved state can ask for Local Control here. Not awaited.
+    if (process.env['QWEN_CODE_DESKTOP'] === '1') {
+      const startedHandle = handle;
+      void import('./local-control/restore.js').then((m) =>
+        m.restoreLocalControl(startedHandle),
+      );
+    }
     await maybeOpenWebShellBrowser(handle, parsed.open, parsed.openWithAuth);
   } catch (err) {
     writeStderrLine(
