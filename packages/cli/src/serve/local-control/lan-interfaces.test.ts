@@ -6,7 +6,11 @@
 
 import type { NetworkInterfaceInfo } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { listLanCandidates } from './lan-interfaces.js';
+import {
+  AmbiguousLanInterfaceError,
+  listLanCandidates,
+  selectLanAddress,
+} from './lan-interfaces.js';
 
 function ipv4(address: string): NetworkInterfaceInfo {
   return {
@@ -104,5 +108,55 @@ describe('listLanCandidates', () => {
       { interfaceName: 'Network Bridge', address: '192.168.4.50' },
       { interfaceName: 'br0', address: '192.168.2.50' },
     ]);
+  });
+
+  it('lists Tailscale tailnet addresses after the physical LANs', () => {
+    expect(
+      listLanCandidates({
+        Tailscale: [ipv4('100.64.0.33')],
+        tailscale0: [ipv4('100.64.0.7')],
+        'Ethernet 4': [ipv4('192.168.0.137')],
+        // Outside 100.64.0.0/10 is not a tailnet address.
+        'Tailscale Tunnel': [ipv4('100.128.0.1')],
+        // A CGNAT address on any other adapter stays excluded.
+        utun3: [ipv4('100.100.1.1')],
+      }),
+    ).toEqual([
+      { interfaceName: 'Ethernet 4', address: '192.168.0.137' },
+      {
+        interfaceName: 'Tailscale',
+        address: '100.64.0.33',
+        kind: 'tailscale',
+      },
+      { interfaceName: 'tailscale0', address: '100.64.0.7', kind: 'tailscale' },
+    ]);
+  });
+});
+
+describe('selectLanAddress', () => {
+  const host = {
+    Tailscale: [ipv4('100.64.0.33')],
+    'Ethernet 4': [ipv4('192.168.0.137')],
+  };
+
+  it('keeps picking a single physical LAN when a tailnet is also present', () => {
+    expect(selectLanAddress(undefined, host)).toEqual({
+      interfaceName: 'Ethernet 4',
+      address: '192.168.0.137',
+    });
+  });
+
+  it('selects the tailnet only when asked for explicitly', () => {
+    expect(selectLanAddress('100.64.0.33', host)).toEqual({
+      interfaceName: 'Tailscale',
+      address: '100.64.0.33',
+      kind: 'tailscale',
+    });
+  });
+
+  it('asks for a choice instead of auto-selecting a lone tailnet', () => {
+    expect(() =>
+      selectLanAddress(undefined, { Tailscale: [ipv4('100.64.0.33')] }),
+    ).toThrow(AmbiguousLanInterfaceError);
   });
 });

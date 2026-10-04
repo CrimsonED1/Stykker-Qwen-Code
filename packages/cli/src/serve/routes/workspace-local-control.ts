@@ -18,6 +18,7 @@ import {
   type LocalControlService,
   type LocalControlStatus,
 } from '../local-control/service.js';
+import type { PersistedLocalControlState } from '../local-control/persisted-state.js';
 import { requestHasOperatorAuthority } from '../auth.js';
 import {
   writeStderrLine,
@@ -34,6 +35,22 @@ export interface RegisterWorkspaceLocalControlRoutesDeps {
   primaryBindHostname?: string;
   /** Whether tokenless primary-listener requests have operator authority. */
   trustedLoopbackMode?: boolean;
+  /**
+   * Records the operator's last on/off choice so the desktop app can restore
+   * it on its next launch. Daemon shutdown does not call it.
+   */
+  persistState?: (state: PersistedLocalControlState) => Promise<void>;
+}
+
+function persist(
+  deps: RegisterWorkspaceLocalControlRoutesDeps,
+  state: PersistedLocalControlState,
+): void {
+  void deps.persistState?.(state).catch((error: unknown) => {
+    writeStderrLine(
+      `qwen serve: could not save the Local Control state: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  });
 }
 
 async function withUiData(status: LocalControlStatus) {
@@ -165,6 +182,7 @@ export function registerWorkspaceLocalControlRoutes(
             target: typeof body.target === 'string' ? body.target : undefined,
           }),
         );
+        persist(deps, { enabled: true, address: ui.address });
         if (!requestHasOperatorAuthority(req, trustedLoopbackMode) && ui.url) {
           // The response below has the secret removed; the operator still
           // needs it to pair. The daemon's own terminal is the one channel a
@@ -185,6 +203,7 @@ export function registerWorkspaceLocalControlRoutes(
     '/workspace/local-control/disable',
     deps.mutate(),
     async (req, res) => {
+      persist(deps, { enabled: false });
       if (listenerIdentityOf(req).kind === 'local-control') {
         queueMicrotask(() => {
           void deps.service.disable().catch((error) => {
