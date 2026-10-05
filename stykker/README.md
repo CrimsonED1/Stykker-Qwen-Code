@@ -3,10 +3,10 @@
 Alles, was nur in diesem Fork gebraucht wird und nie in einen PR an upstream gehört.
 Regeln für Agenten: [`../QWEN.md`](../QWEN.md).
 
-| Pfad                         | Inhalt                                                |
-| ---------------------------- | ----------------------------------------------------- |
-| `plans/`                     | eigene Pläne und Notizen (Dateiname `JJJJ-MM-TT-…md`) |
-| `scripts/update-desktop.bat` | Desktop-Runtime aus diesem Fork bauen und einsetzen   |
+| Pfad                         | Inhalt                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------- |
+| `plans/`                     | eigene Pläne und Notizen (Dateiname `JJJJ-MM-TT-…md`)                       |
+| `scripts/update-desktop.bat` | Desktop-Runtime aus diesem Fork bauen und einsetzen, mit Aktualitätsprüfung |
 
 ## Ordner unter `<qwen-root>`
 
@@ -56,6 +56,12 @@ Offene Branches (in `skymain` gemergt, noch kein PR):
 `stykker\scripts\update-desktop.bat`, **nur manuell, App und alle Qwen-Sessions vorher schließen.**
 Baut den Runtime (Node 22 unter `<root>\node-v22.23.3-win-x64`, Netz nötig), sichert die alte Runtime nach
 `runtime\qwen-code.bak-<Zeitstempel>` und kopiert die neue hinein. Bricht ab, wenn die App läuft.
+
+Vor dem Build prüft das Skript `runtime\qwen-code\manifest.json` gegen den Quellcode: **Commit,
+Version und Node-Version müssen gleich sein** und der Arbeitsstand sauber. Dann meldet es
+„Nichts zu tun“ und überspringt den Build komplett. `update-desktop.bat /F` erzwingt den Neubau,
+etwa wenn eine besädigte Runtime noch ein passendes Manifest hat. Eine uncommittete Änderung
+zählt als Abweichung — auch an dieser README oder am Skript selbst.
 
 ## Eigene Version erkennen
 

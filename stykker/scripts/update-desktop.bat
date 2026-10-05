@@ -7,12 +7,24 @@ rem ------------------------------------------------------------
 rem  Baut die CLI aus diesem Fork (Branch skymain) neu und kopiert
 rem  den Desktop-Runtime in die installierte App.
 rem
+rem  Zuerst wird das Manifest der installierten Runtime geprueft:
+rem  Stimmen Commit, Version und Node-Version mit dem Quellcode ueberein
+rem  und ist der Quellcode sauber, wird nichts gebaut. Der Build
+rem  entfaellt also beim zweiten Lauf ohne Aenderung.
+rem
+rem  Parameter: /F erzwingt den Neubau (z. B. wenn eine Runtime
+rem  beschaedigt ist und ihr Manifest trotzdem passt).
+rem
 rem  *** NUR MANUELL AUSFUEHREN ***
 rem  Vor dem Start MUESSEN die Desktop-App UND alle Qwen-Code-
 rem  Sessions geschlossen sein. Sonst sind die Runtime-Dateien
 rem  gesperrt und die laufenden Sessions stuerzen ab. Dieses
 rem  Skript wird absichtlich NICHT automatisch gestartet.
 rem ============================================================
+
+set "FORCE=0"
+if /i "%~1"=="/F" set "FORCE=1"
+if /i "%~1"=="--force" set "FORCE=1"
 
 set "NODE22=<root>\node-v22.23.3-win-x64"
 set "DESKTOP=<qwen-root>\qwen-code-desktop"
@@ -27,7 +39,90 @@ echo  Quelle : %SRC%
 echo  Ziel   : %RUNTIME%
 echo.
 
-rem --- 1. App darf nicht laufen ---
+rem --- 1. Node 22 vorhanden ---
+if not exist "%NODE22%\node.exe" (
+  echo FEHLER: Node 22 nicht gefunden unter "%NODE22%".
+  echo Der Desktop-Runtime-Build verlangt Node 22 ^(siehe .nvmrc^).
+  echo.
+  pause
+  exit /b 1
+)
+
+set "PATH=%NODE22%;%PATH%"
+
+rem --- Versionsstand des Quellcodes ermitteln ---
+rem Kennzeichnung: <version>+sky.<commit>[.dirty]
+rem Anzeige in "qwen --version" und unten in der Seitenleiste.
+for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -p "require('%SRC:\=/%package.json').version"`) do set "PKGVER=%%i"
+for /f "usebackq delims=" %%i in (`git -C "%SRC%." rev-parse --short^=7 HEAD`) do set "GITSHA=%%i"
+for /f "usebackq delims=" %%i in (`git -C "%SRC%." rev-parse HEAD`) do set "GITSHAFULL=%%i"
+for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -v`) do set "NODEVER=%%i"
+set "DIRTY="
+for /f "usebackq delims=" %%i in (`git -C "%SRC%." status --porcelain --untracked-files^=no`) do set "DIRTY=.dirty"
+set "QWEN_CODE_BUILD_VERSION=!PKGVER!+sky.!GITSHA!!DIRTY!"
+echo  Quelle : Version !QWEN_CODE_BUILD_VERSION!
+echo.
+
+rem --- 2. Ist die installierte Runtime bereits genau dieser Build? ---
+rem Das Manifest nennt Commit, Version und Node-Version, mit denen die
+rem installierte Runtime gebaut wurde. Sind alle drei gleich, ist der
+rem Quellcode sauber und die Runtime vollstaendig, liefert ein Neubau
+rem dasselbe Ergebnis - dann nur melden und beenden.
+set "MF="
+if exist "%RUNTIME%\manifest.json" for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -p "const m=require('%RUNTIME:\=/%/manifest.json');[m.qwenCodeCommit,m.qwenCodeVersion,m.node].join('|')"`) do set "MF=%%i"
+if "!FORCE!"=="1" goto :bauen
+if not defined MF (
+  echo  Manifest fehlt oder unlesbar - Build wird ausgefuehrt.
+  echo.
+  goto :bauen
+)
+for /f "tokens=1-3 delims=|" %%a in ("!MF!") do (
+  set "MFCOMMIT=%%a"
+  set "MFVERSION=%%b"
+  set "MFNODE=%%c"
+)
+if not "!MFCOMMIT!"=="!GITSHAFULL!" (
+  echo  Abweichung: Runtime von Commit !MFCOMMIT!, Quellcode bei !GITSHAFULL!
+  echo.
+  goto :bauen
+)
+if not "!MFVERSION!"=="!PKGVER!" (
+  echo  Abweichung: Runtime hat Version !MFVERSION!, Quellcode !PKGVER!
+  echo.
+  goto :bauen
+)
+if not "!MFNODE!"=="!NODEVER!" (
+  echo  Abweichung: Runtime mit !MFNODE! gebaut, Quellcode erwartet !NODEVER!
+  echo.
+  goto :bauen
+)
+if defined DIRTY (
+  echo  Abweichung: Arbeitsstand hat nicht committete Aenderungen.
+  echo.
+  goto :bauen
+)
+if not exist "%RUNTIME%\lib\cli-entry.js" (
+  echo  Abweichung: Runtime unvollstaendig - lib\cli-entry.js fehlt.
+  echo.
+  goto :bauen
+)
+
+echo ============================================================
+echo  NICHTS ZU TUN - die installierte Runtime ist aktuell.
+echo ============================================================
+echo  Installiert : Commit !MFCOMMIT!
+echo               Version !MFVERSION! ^(Node !MFNODE!^)
+echo  Quellcode  : Commit !GITSHAFULL!
+echo               Version !PKGVER! ^(Node !NODEVER!^)
+echo               sauber, Arbeitsstand identisch
+echo.
+echo  Gebaut wird nur bei einer Abweichung. Erzwingen mit "%~nx0" /F
+echo.
+pause
+exit /b 0
+
+:bauen
+rem --- 3. App darf nicht laufen ---
 tasklist /fi "imagename eq qwen-code-desktop.exe" 2>nul | find /i "qwen-code-desktop.exe" >nul
 if not errorlevel 1 (
   echo FEHLER: Qwen Code Desktop laeuft noch.
@@ -37,28 +132,7 @@ if not errorlevel 1 (
   exit /b 1
 )
 
-rem --- 2. Node 22 vorhanden ---
-if not exist "%NODE22%\node.exe" (
-  echo FEHLER: Node 22 nicht gefunden unter "%NODE22%".
-  echo Der Desktop-Runtime-Build verlangt Node 22 ^(siehe .nvmrc^).
-  echo.
-  pause
-  exit /b 1
-)
-
-rem --- 3. Desktop-Runtime aus dem Quellcode bauen ---
-set "PATH=%NODE22%;%PATH%"
-
-rem --- Version kennzeichnen: <version>+sky.<commit>[.dirty] ---
-rem Anzeige in "qwen --version" und unten in der Seitenleiste.
-for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -p "require('%SRC:\=/%package.json').version"`) do set "PKGVER=%%i"
-for /f "usebackq delims=" %%i in (`git -C "%SRC%." rev-parse --short^=7 HEAD`) do set "GITSHA=%%i"
-set "DIRTY="
-for /f "usebackq delims=" %%i in (`git -C "%SRC%." status --porcelain --untracked-files^=no`) do set "DIRTY=.dirty"
-set "QWEN_CODE_BUILD_VERSION=!PKGVER!+sky.!GITSHA!!DIRTY!"
-echo  Version: !QWEN_CODE_BUILD_VERSION!
-echo.
-
+rem --- 4. Desktop-Runtime aus dem Quellcode bauen ---
 echo [1/3] Baue CLI und Desktop-Runtime ... ^(dauert mehrere Minuten^)
 cd /d "%SRC%packages\desktop"
 call "%NODE22%\npm.cmd" run build:runtime --workspaces=false
