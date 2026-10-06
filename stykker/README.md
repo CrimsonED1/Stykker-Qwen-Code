@@ -121,7 +121,13 @@ jedem Start der Dialog „Qwen Code Desktop 0.25.0 is available. Install and res
 
 ## CI
 
-Im Fork laufen **keine** GitHub Actions. Die API meldet 0 registrierte Workflows trotz der vorhandenen
-Workflow-Dateien und 0 Läufe über alle Branches (geprüft 2026-10-06, auch nach Pushes auf `skymain`).
-`ci.yml` hätte ohnehin nur `push` auf `main` und Pull Requests gegen `main`/`release/**`. Ein Push auf
-`skymain` löst also nichts aus; es kommt auch kein Lauf nachträglich.
+Seit dem ersten `main`-Push nach Wochen listet die API **59 Workflow-Dateien als `active`** (Stand
+2026-10-06; vorher meldete sie 0). Läufe gibt es trotzdem **keine**: 0 für `main`, 0 über alle Branches —
+auch dieser Push hat nichts ausgelöst, obwohl `ci.yml` einen `push`-Trigger auf `main` hat.
+
+Das ist nur die halbe Antwort: ob Actions im Repo an- oder abgeschaltet ist, gibt die API ohne Token
+nicht preis (`/actions/permissions` → 401 Nicht autorisiert). Zum Nachsehen im Browser: Settings →
+Actions → General. Falls dort jemand Actions einschaltet, feuert ein Push auf **`main`** (nicht auf
+`skymain`); `main` wird nur als Spiegel von `upstream/main` gepusht.
+
+Pushes auf `skymain` haben nichts ausgelöst, und es kommt auch kein Lauf nachträglich.
