@@ -18,6 +18,7 @@ import {
 import { Spinner } from '../ui/spinner';
 import {
   LocalControlRequestError,
+  pairingTokenFromUrl,
   requestLocalControl,
   type LanCandidate,
   type LocalControlStatus,
@@ -121,6 +122,7 @@ export function LocalControlSettingsCard() {
   };
 
   const needsSelection = (status?.interfaces?.length ?? 0) > 1;
+  const pairingToken = pairingTokenFromUrl(status?.url);
 
   return (
     <div
@@ -179,19 +181,37 @@ export function LocalControlSettingsCard() {
             <div className="break-all rounded-md bg-muted px-3 py-2 font-mono text-xs">
               {status.url}
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                void writeClipboardText(status.url!).catch(
-                  warnClipboardWriteFailure,
-                )
-              }
-            >
-              <CopyIcon aria-hidden="true" />
-              {t('common.copy')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  void writeClipboardText(status.url!).catch(
+                    warnClipboardWriteFailure,
+                  )
+                }
+              >
+                <CopyIcon aria-hidden="true" />
+                {t('common.copy')}
+              </Button>
+              {pairingToken !== undefined && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="local-control-copy-token"
+                  onClick={() =>
+                    void writeClipboardText(pairingToken).catch(
+                      warnClipboardWriteFailure,
+                    )
+                  }
+                >
+                  <CopyIcon aria-hidden="true" />
+                  {t('settings.localControl.copyToken')}
+                </Button>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
               {status.encrypted
                 ? t('settings.localControl.encrypted')

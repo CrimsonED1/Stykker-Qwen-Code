@@ -82,3 +82,37 @@ export async function requestLocalControl(
   }
   return payload!;
 }
+
+/**
+ * The pairing secret a status URL carries in its fragment, or `undefined` when
+ * it carries none.
+ *
+ * The fragment is deliberate — it keeps the secret out of server logs and
+ * access logs — so a caller that needs the credential *on its own* has to pull
+ * it back out. The phone's connect form has a bearer-token field of its own,
+ * and the browser that opens a scanned QR is the operator's choice, not ours;
+ * handing over just the token frees them from the QR without exposing the
+ * secret anywhere new.
+ */
+export function pairingTokenFromUrl(
+  url: string | undefined,
+): string | undefined {
+  if (!url) return undefined;
+  let hash: string;
+  try {
+    hash = new URL(url).hash;
+  } catch {
+    return undefined;
+  }
+  const prefix = '#token=';
+  if (!hash.startsWith(prefix)) return undefined;
+  const raw = hash.slice(prefix.length);
+  if (!raw) return undefined;
+  try {
+    return decodeURIComponent(raw) || undefined;
+  } catch {
+    // A malformed escape is still the secret the daemon minted; hand back the
+    // bytes rather than nothing.
+    return raw;
+  }
+}
