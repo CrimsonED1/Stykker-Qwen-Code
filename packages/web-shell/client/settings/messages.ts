@@ -51,7 +51,7 @@ export const SETTINGS_MESSAGES_EN: Record<string, SettingsMessage> = {
   'settings.requiresRestart': 'This change requires a restart to take effect.',
   'settings.localControl.title': 'Local Control',
   'settings.localControl.description':
-    'Continue this Qwen Code session from a phone on the same trusted network.',
+    'Continue this Qwen Code session from a phone on the same trusted network. In the desktop app the pinned address and pairing are kept, so a paired phone reconnects after a restart.',
   'settings.localControl.on': 'On',
   'settings.localControl.off': 'Off',
   'settings.localControl.network': 'Local network',
@@ -142,7 +142,7 @@ export const SETTINGS_MESSAGES_ZH: Record<string, SettingsMessage> = {
   'settings.requiresRestart': '此更改需要重启后才能生效。',
   'settings.localControl.title': '本地控制',
   'settings.localControl.description':
-    '通过同一受信任网络中的手机继续当前 Qwen Code 会话。',
+    '通过同一受信任网络中的手机继续当前 Qwen Code 会话。桌面应用会保留固定的地址与配对信息，重启后已配对的手机可直接重连。',
   'settings.localControl.on': '已开启',
   'settings.localControl.off': '关闭',
   'settings.localControl.network': '本地网络',

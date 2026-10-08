@@ -25,8 +25,20 @@ import {
   writeStdoutLineSafe,
 } from '../../utils/stdioHelpers.js';
 
+/**
+ * What these routes need from the service. `pairingCredential` is optional so
+ * a service double — or an embedder that never persists state — stays valid;
+ * the real service always provides it.
+ */
+type LocalControlRouteService = Pick<
+  LocalControlService,
+  'enable' | 'disable' | 'status'
+> & {
+  pairingCredential?(): { id: string; secret: string } | undefined;
+};
+
 export interface RegisterWorkspaceLocalControlRoutesDeps {
-  service: LocalControlService;
+  service: LocalControlRouteService;
   mutate: (opts?: { strict?: boolean }) => RequestHandler;
   safeBody: (req: Request) => Record<string, unknown>;
   isDaemonDraining?: () => boolean;
@@ -36,8 +48,10 @@ export interface RegisterWorkspaceLocalControlRoutesDeps {
   /** Whether tokenless primary-listener requests have operator authority. */
   trustedLoopbackMode?: boolean;
   /**
-   * Records the operator's last on/off choice so the desktop app can restore
-   * it on its next launch. Daemon shutdown does not call it.
+   * Records the operator's on/off choice, the chosen address, and — so the
+   * desktop app can reproduce the same link on its next launch — the pinned
+   * port and pairing credential. Only the desktop app installs it; daemon
+   * shutdown does not call it.
    */
   persistState?: (state: PersistedLocalControlState) => Promise<void>;
 }
@@ -182,7 +196,19 @@ export function registerWorkspaceLocalControlRoutes(
             target: typeof body.target === 'string' ? body.target : undefined,
           }),
         );
-        persist(deps, { enabled: true, address: ui.address });
+        // Pin what a restart has to reproduce — the address, the port and the
+        // pairing credential — so the desktop app's next launch brings back
+        // the same link instead of minting a fresh credential on the daemon's
+        // ephemeral port. Only the desktop app installs `persistState`.
+        const pairingToken = deps.service.pairingCredential?.();
+        persist(deps, {
+          enabled: true,
+          ...(ui.address ? { address: ui.address } : {}),
+          ...(typeof ui.port === 'number' ? { port: ui.port } : {}),
+          ...(pairingToken
+            ? { pairingId: pairingToken.id, pairingSecret: pairingToken.secret }
+            : {}),
+        });
         if (!requestHasOperatorAuthority(req, trustedLoopbackMode) && ui.url) {
           // The response below has the secret removed; the operator still
           // needs it to pair. The daemon's own terminal is the one channel a

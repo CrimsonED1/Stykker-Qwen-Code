@@ -53,7 +53,10 @@ import {
   LocalControlService,
 } from './local-control/index.js';
 import { registerWorkspaceLocalControlRoutes } from './routes/workspace-local-control.js';
-import { writeLocalControlState } from './local-control/persisted-state.js';
+import {
+  desktopLanTlsPaths,
+  writeLocalControlState,
+} from './local-control/persisted-state.js';
 import { registerWebShellPairingRoutes } from './routes/web-shell-pairing.js';
 import type {
   DeviceFlowProvider,
@@ -4177,10 +4180,16 @@ export function createServeApp(
     attachWebSocket: (server) => acpHandleRef.current?.attachServer(server),
     detachWebSocket: (server) => acpHandleRef.current?.detachServer(server),
     getPort,
+    // The desktop app never passes --tls-cert/--tls-key: its own window has to
+    // keep loading plain-HTTP loopback, and the Tauri shell builds that URL
+    // from the runtime's listening line. Its phone-facing LAN listener is the
+    // surface that needs a secure context, so it reads a certificate from the
+    // well-known desktop directory instead. This is the only place that
+    // transport is chosen; the primary listener is untouched.
     tlsPaths:
       opts.tlsCert && opts.tlsKey
         ? { cert: opts.tlsCert, key: opts.tlsKey }
-        : undefined,
+        : desktopLanTlsPaths(),
   });
   app.locals['localControlService'] = localControlService;
 

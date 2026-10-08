@@ -354,6 +354,35 @@ describe('Local Control state persistence', () => {
     expect(persistState).toHaveBeenLastCalledWith({ enabled: false });
   });
 
+  it('pins the port and pairing credential the desktop app must reproduce', async () => {
+    const app = express();
+    const persistState = vi.fn(async () => {});
+    registerWorkspaceLocalControlRoutes(app, {
+      service: {
+        enable: vi.fn(async () => ({
+          active: true,
+          interfaceName: 'Local network',
+          address: '192.168.1.100',
+          port: 4171,
+        })),
+        disable: vi.fn(async () => ({ active: false })),
+        pairingCredential: () => ({ id: 'pinned-id', secret: 'pinned-secret' }),
+      } as unknown as LocalControlService,
+      mutate: () => (_req, _res, next) => next(),
+      safeBody: () => ({ address: '192.168.1.100' }),
+      persistState,
+    });
+
+    await request(app).post('/workspace/local-control/enable').expect(200);
+    expect(persistState).toHaveBeenLastCalledWith({
+      enabled: true,
+      address: '192.168.1.100',
+      port: 4171,
+      pairingId: 'pinned-id',
+      pairingSecret: 'pinned-secret',
+    });
+  });
+
   it('does not record a failed enable', async () => {
     const app = express();
     const persistState = vi.fn(async () => {});

@@ -108,6 +108,41 @@ describe('LocalControlService', () => {
     await service.disable();
   });
 
+  it('binds a pinned port and reuses a supplied pairing credential', async () => {
+    const pinnedPort = await unusedPort();
+    const daemonPort = await unusedPort();
+    const credentials = new CredentialStore();
+    const service = new LocalControlService({
+      app: express(),
+      credentials,
+      originAllowlist: new MutableOriginAllowlist({
+        allowAny: false,
+        origins: new Set(),
+      }),
+      attachWebSocket: () => {},
+      detachWebSocket: () => {},
+      // Deliberately different from the pinned port: the pin must win, or a
+      // paired phone's saved address would follow the daemon's port instead.
+      getPort: () => daemonPort,
+    });
+
+    const pairingToken = { id: 'pinned-id', secret: 'pinned-secret' };
+    const status = await service.enable({ port: pinnedPort, pairingToken });
+
+    expect(status.port).toBe(pinnedPort);
+    expect(status.url).toContain(`:${pinnedPort}/#token=pinned-secret`);
+    expect(service.pairingCredential()).toEqual(pairingToken);
+    expect(
+      credentials.verify('pinned-secret', {
+        kind: 'local-control',
+        authority: `127.0.0.1:${pinnedPort}`,
+      }),
+    ).toBe(true);
+
+    await service.disable();
+    expect(service.pairingCredential()).toBeUndefined();
+  });
+
   it('advertises the MagicDNS name for a tailnet address and binds the IP', async () => {
     const { selectLanAddress } = await import('./lan-interfaces.js');
     const tailnet = {

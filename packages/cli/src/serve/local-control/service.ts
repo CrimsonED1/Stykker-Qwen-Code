@@ -63,6 +63,20 @@ export interface LocalControlEnableOptions {
   /** Which LAN address to expose, when the host has more than one. */
   address?: string;
   /**
+   * Port for the LAN listener. Absent mirrors the daemon's own port, which is
+   * what the CLI has always done. The desktop app pins a port so the address
+   * a paired phone saved survives a restart instead of following the daemon's
+   * ephemeral port.
+   */
+  port?: number;
+  /**
+   * Reuse an existing pairing credential rather than minting a new one. The
+   * desktop app passes back the credential it pinned on the first enable, so
+   * a phone that paired once keeps working after a restart instead of
+   * re-scanning a QR on every launch.
+   */
+  pairingToken?: { id: string; secret: string };
+  /**
    * Path + query the QR should open, e.g. `/?workspace=%2Fsrc%2Fapp`. Lets the
    * phone land on the session the operator was looking at rather than the
    * daemon root — the CLI path always advertised the root.
@@ -130,6 +144,7 @@ export class LocalControlService {
   #selected: LanCandidate | undefined;
   #sleep: SleepInhibitorHandle | undefined;
   #url: string | undefined;
+  #port: number | undefined;
   #transition: Promise<void> = Promise.resolve();
 
   constructor(deps: LocalControlServiceDeps) {
@@ -149,10 +164,23 @@ export class LocalControlService {
       url: this.#url,
       interfaceName: this.#selected.interfaceName,
       address: this.#selected.address,
-      port: this.#deps.getPort(),
+      port: this.#port,
       sleepInhibited: this.#sleep !== undefined && sleepInhibitor.isRunning(),
       encrypted: this.#deps.tlsPaths !== undefined,
     };
+  }
+
+  /**
+   * The active pairing credential, in the structured form a caller needs to
+   * persist it. `undefined` while inactive.
+   *
+   * The secret is the same one already carried in `status().url`'s fragment,
+   * so this widens nothing that a caller with operator authority cannot
+   * already read; it just hands it over as two fields instead of a URL.
+   */
+  pairingCredential(): { id: string; secret: string } | undefined {
+    if (!this.#token) return undefined;
+    return { id: this.#token.id, secret: this.#token.secret };
   }
 
   /**
@@ -173,7 +201,7 @@ export class LocalControlService {
     if (this.active) return this.status();
 
     const selected = selectLanAddress(options.address);
-    const port = this.#deps.getPort();
+    const port = options.port ?? this.#deps.getPort();
     // Bind the tailnet IP but advertise the MagicDNS name: it is what the
     // browser shows and what a `tailscale cert` certificate is issued for.
     const host =
@@ -183,7 +211,7 @@ export class LocalControlService {
           )()) ?? selected.address)
         : selected.address;
     const authority = `${host}:${port}`;
-    const token = mintPairingToken();
+    const token = options.pairingToken ?? mintPairingToken();
 
     const tls = this.#deps.tlsPaths;
     const scheme = tls ? 'https' : 'http';
@@ -239,6 +267,7 @@ export class LocalControlService {
     this.#token = token;
     this.#selected = selected;
     this.#url = url;
+    this.#port = port;
     // Best-effort, and reported as such: the core inhibitor no-ops on headless
     // SSH sessions and on hosts without a usable backend. A phone losing its
     // session to a sleeping laptop should be explainable from the status, so
@@ -266,6 +295,7 @@ export class LocalControlService {
     this.#token = undefined;
     this.#selected = undefined;
     this.#url = undefined;
+    this.#port = undefined;
 
     if (token) this.#deps.credentials.revokePairingToken(token.id);
     this.#deps.originAllowlist.remove(CORS_KEY);
