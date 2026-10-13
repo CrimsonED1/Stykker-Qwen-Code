@@ -23,6 +23,7 @@ import {
   type LanCandidate,
   type LocalControlStatus,
 } from '../local-control-api';
+import { LocalControlPairedDevices } from './LocalControlPairedDevices';
 
 function getLocalControlTarget(): string {
   const url = new URL(window.location.href);
@@ -253,6 +254,8 @@ export function LocalControlSettingsCard() {
           ? t('settings.localControl.disable')
           : t('settings.localControl.enable')}
       </Button>
+
+      <LocalControlPairedDevices baseUrl={baseUrl} token={token} />
     </div>
   );
 }

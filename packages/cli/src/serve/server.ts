@@ -57,6 +57,10 @@ import {
   desktopLanTlsPaths,
   writeLocalControlState,
 } from './local-control/persisted-state.js';
+import {
+  PairedDeviceRegistry,
+  pairedDevicesPath,
+} from './local-control/paired-devices.js';
 import { registerWebShellPairingRoutes } from './routes/web-shell-pairing.js';
 import type {
   DeviceFlowProvider,
@@ -4170,6 +4174,15 @@ export function createServeApp(
     ...(process.env['QWEN_CODE_DESKTOP'] === '1'
       ? { persistState: (state) => writeLocalControlState(state) }
       : {}),
+    // Same boundary for paired devices: only the desktop app keeps them
+    // across launches; a plain CLI daemon holds the list in memory.
+    devices: new PairedDeviceRegistry(
+      credentials,
+      process.env['QWEN_CODE_DESKTOP'] === '1'
+        ? pairedDevicesPath()
+        : undefined,
+    ),
+    credentials,
   });
 
   // Web Shell SPA deep-link fallback — registered AFTER every API route (and

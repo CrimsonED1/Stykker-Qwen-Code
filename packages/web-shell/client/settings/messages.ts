@@ -60,6 +60,18 @@ export const SETTINGS_MESSAGES_EN: Record<string, SettingsMessage> = {
   'settings.localControl.enable': 'Turn on Local Control',
   'settings.localControl.disable': 'Disconnect phone access',
   'settings.localControl.copyToken': 'Copy token',
+  'settings.localControl.remember.title': 'Keep devices signed in',
+  'settings.localControl.remember.description':
+    'A paired phone keeps its token in the browser and reconnects without a new QR code, even after the browser closed the tab. Off, the token lasts only as long as the tab. Applies to devices that pair from now on; remove a device below to sign it out.',
+  'settings.localControl.devices.title': 'Paired devices',
+  'settings.localControl.devices.empty':
+    'No device has paired yet. Scan the QR code with a phone to add one.',
+  'settings.localControl.devices.current': 'This device',
+  'settings.localControl.devices.token': 'Token',
+  'settings.localControl.devices.paired': 'Paired',
+  'settings.localControl.devices.lastSeen': 'Last seen',
+  'settings.localControl.devices.remove': 'Remove',
+  'settings.localControl.devices.refresh': 'Refresh paired devices',
   'settings.localControl.encrypted': 'Encrypted',
   'settings.localControl.unencrypted':
     'Unencrypted — trusted networks only; re-enable after network changes',
@@ -152,6 +164,18 @@ export const SETTINGS_MESSAGES_ZH: Record<string, SettingsMessage> = {
   'settings.localControl.enable': '开启本地控制',
   'settings.localControl.disable': '断开手机访问',
   'settings.localControl.copyToken': '复制令牌',
+  'settings.localControl.remember.title': '保持设备登录',
+  'settings.localControl.remember.description':
+    '已配对的手机会把令牌保存在浏览器中，即使浏览器关闭了标签页，也无需重新扫码即可重新连接。关闭后，令牌仅在标签页存续期间有效。仅对此后配对的设备生效；如需让某台设备退出登录，请在下方将其移除。',
+  'settings.localControl.devices.title': '已配对设备',
+  'settings.localControl.devices.empty':
+    '尚无设备配对。用手机扫描二维码即可添加。',
+  'settings.localControl.devices.current': '当前设备',
+  'settings.localControl.devices.token': '令牌',
+  'settings.localControl.devices.paired': '配对于',
+  'settings.localControl.devices.lastSeen': '最近活动',
+  'settings.localControl.devices.remove': '移除',
+  'settings.localControl.devices.refresh': '刷新已配对设备',
   'settings.localControl.encrypted': '已加密',
   'settings.localControl.unencrypted':
     '未加密，仅限受信任网络；网络变化后请重新启用',

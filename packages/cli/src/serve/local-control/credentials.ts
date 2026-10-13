@@ -57,6 +57,12 @@ export class CredentialStore implements ListenerScopedCredentials {
     DesktopRelayCredentialClaim & { expiresAt: number }
   >();
 
+  /**
+   * Called with the pairing id each time a pairing credential authenticates
+   * on the LAN listener. The paired-device registry uses it for "last seen".
+   */
+  onPairingVerified: ((pairingId: string) => void) | undefined;
+
   constructor(runtimeToken?: string) {
     this.#runtime = hashToken(runtimeToken);
   }
@@ -65,8 +71,30 @@ export class CredentialStore implements ListenerScopedCredentials {
     this.#pairing.set(id, createHash('sha256').update(token, 'utf8').digest());
   }
 
+  /**
+   * Register a pairing credential by its sha256 digest. Used for device
+   * tokens restored from disk, where only the digest was ever stored.
+   */
+  addPairingDigest(id: string, digest: Buffer): void {
+    this.#pairing.set(id, digest);
+  }
+
   revokePairingToken(id: string): boolean {
     return this.#pairing.delete(id);
+  }
+
+  /**
+   * The id of the pairing credential `credentials` matches, if any. Lets a
+   * route tell the shared QR secret from a per-device token after
+   * `bearerAuth` has already admitted the request.
+   */
+  pairingIdOf(credentials: string): string | undefined {
+    const candidate = createHash('sha256').update(credentials, 'utf8').digest();
+    let matched: string | undefined;
+    for (const [id, expected] of this.#pairing) {
+      if (equalDigest(candidate, expected)) matched = id;
+    }
+    return matched;
   }
 
   addWebShellToken(token: string): boolean {
@@ -130,9 +158,14 @@ export class CredentialStore implements ListenerScopedCredentials {
     const candidate = createHash('sha256').update(credentials, 'utf8').digest();
     let matched = false;
     if (listener.kind === 'local-control') {
-      for (const expected of this.#pairing.values()) {
-        if (equalDigest(candidate, expected)) matched = true;
+      let matchedId: string | undefined;
+      for (const [id, expected] of this.#pairing) {
+        if (equalDigest(candidate, expected)) {
+          matched = true;
+          matchedId = id;
+        }
       }
+      if (matchedId !== undefined) this.onPairingVerified?.(matchedId);
       return matched;
     }
     if (this.#runtime !== undefined && equalDigest(candidate, this.#runtime)) {
