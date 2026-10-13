@@ -83,6 +83,95 @@ export async function requestLocalControl(
   return payload!;
 }
 
+export interface PairedDevice {
+  id: string;
+  /** Short prefix of the token digest — identifies the token, is not it. */
+  fingerprint: string;
+  label: string;
+  address?: string;
+  createdAt: string;
+  lastSeenAt: string;
+  /** True for the device this request came from. */
+  current?: boolean;
+}
+
+export interface PairedDevicesState {
+  rememberDevices: boolean;
+  devices: PairedDevice[];
+}
+
+async function requestPairedDevices<T>(
+  baseUrl: string,
+  token: string | undefined,
+  method: 'GET' | 'POST' | 'DELETE',
+  path: string,
+  body?: object,
+): Promise<T> {
+  const headers = new Headers(
+    token ? { Authorization: `Bearer ${token}` } : undefined,
+  );
+  if (body) headers.set('Content-Type', 'application/json');
+  const response = await fetch(resolveLocalControlUrl(baseUrl, path), {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+    cache: 'no-store',
+    signal: AbortSignal.timeout(10_000),
+  });
+  const payload = (await response.json().catch(() => ({}))) as T & {
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new LocalControlRequestError(
+      payload.error?.trim() ||
+        response.statusText ||
+        `Local Control request failed (${response.status})`,
+      undefined,
+      response.status,
+    );
+  }
+  return payload;
+}
+
+export function listPairedDevices(
+  baseUrl: string,
+  token: string | undefined,
+): Promise<PairedDevicesState> {
+  return requestPairedDevices(
+    baseUrl,
+    token,
+    'GET',
+    '/workspace/local-control/devices',
+  );
+}
+
+export function removePairedDevice(
+  baseUrl: string,
+  token: string | undefined,
+  id: string,
+): Promise<{ removed: boolean }> {
+  return requestPairedDevices(
+    baseUrl,
+    token,
+    'DELETE',
+    `/workspace/local-control/devices/${encodeURIComponent(id)}`,
+  );
+}
+
+export function setRememberDevices(
+  baseUrl: string,
+  token: string | undefined,
+  rememberDevices: boolean,
+): Promise<{ rememberDevices: boolean }> {
+  return requestPairedDevices(
+    baseUrl,
+    token,
+    'POST',
+    '/workspace/local-control/settings',
+    { rememberDevices },
+  );
+}
+
 /**
  * The pairing secret a status URL carries in its fragment, or `undefined` when
  * it carries none.

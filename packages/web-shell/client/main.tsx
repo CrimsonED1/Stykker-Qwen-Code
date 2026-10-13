@@ -6,7 +6,10 @@ import { StandaloneContext } from './config/standalone';
 import { WorkspaceHostsEnabled } from './config/workspace-hosts';
 import { isKnownDaemonTarget } from './config/daemon';
 import { isRemoteConnectionKnown } from './config/remote-connections';
-import { exchangePairingCode } from './config/pairing';
+import {
+  enrollLocalControlDevice,
+  exchangePairingCode,
+} from './config/pairing';
 import ReactDOM from 'react-dom/client';
 import { useCallback, useEffect, useState } from 'react';
 import { DaemonWorkspaceProvider } from '@qwen-code/web-shell/daemon-react-sdk';
@@ -26,7 +29,9 @@ import { WorkspaceSessionProvider } from './components/WorkspaceSessionProvider'
 import {
   getDaemonBaseUrl,
   getDaemonToken,
+  hasDaemonTokenInUrl,
   hasReloadSurvivableDaemonToken,
+  peekStoredDaemonToken,
   removeDaemonTokenFromUrl,
   waitForDaemonTokenMessage,
 } from './config/daemon';
@@ -462,9 +467,10 @@ export function StandaloneApp({ daemonToken }: { daemonToken?: string }) {
 
 async function main() {
   const baseUrl = DAEMON_BASE_URL || window.location.origin;
-  const storedToken = INVALID_DAEMON_TARGET
-    ? undefined
-    : getDaemonToken(baseUrl);
+  // Read before `getDaemonToken` lets a scanned QR token replace it.
+  const scanned = !INVALID_DAEMON_TARGET && hasDaemonTokenInUrl();
+  const previousToken = scanned ? peekStoredDaemonToken(baseUrl) : undefined;
+  let storedToken = INVALID_DAEMON_TARGET ? undefined : getDaemonToken(baseUrl);
   if (INVALID_DAEMON_TARGET) {
     // Keep a fragment token for recovery, but never leave a server-visible
     // query token in the address bar or history.
@@ -483,6 +489,13 @@ async function main() {
     document.documentElement.hasAttribute('data-web-shell-unsupported-browser')
   )
     return;
+  if (scanned && storedToken) {
+    storedToken = await enrollLocalControlDevice(
+      baseUrl,
+      storedToken,
+      previousToken,
+    );
+  }
   const pairing = await exchangePairingCode(
     INVALID_DAEMON_TARGET ? '' : baseUrl,
   );

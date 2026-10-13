@@ -19,6 +19,11 @@ import {
   type LocalControlStatus,
 } from '../local-control/service.js';
 import type { PersistedLocalControlState } from '../local-control/persisted-state.js';
+import type { CredentialStore } from '../local-control/credentials.js';
+import {
+  deviceIdOf,
+  type PairedDeviceRegistry,
+} from '../local-control/paired-devices.js';
 import { requestHasOperatorAuthority } from '../auth.js';
 import {
   writeStderrLine,
@@ -54,6 +59,10 @@ export interface RegisterWorkspaceLocalControlRoutesDeps {
    * shutdown does not call it.
    */
   persistState?: (state: PersistedLocalControlState) => Promise<void>;
+  /** Paired-device registry; absent leaves the device routes unregistered. */
+  devices?: PairedDeviceRegistry;
+  /** Resolves which pairing credential a verified request presented. */
+  credentials?: Pick<CredentialStore, 'pairingIdOf'>;
 }
 
 function persist(
@@ -137,6 +146,9 @@ export function registerWorkspaceLocalControlRoutes(
   deps: RegisterWorkspaceLocalControlRoutesDeps,
 ): void {
   const trustedLoopbackMode = deps.trustedLoopbackMode === true;
+  if (deps.devices) {
+    registerPairedDeviceRoutes(app, deps, deps.devices, trustedLoopbackMode);
+  }
   app.get('/workspace/local-control', async (req, res) => {
     res
       .status(200)
@@ -250,6 +262,164 @@ export function registerWorkspaceLocalControlRoutes(
             trustedLoopbackMode,
           ),
         );
+    },
+  );
+}
+
+/** The bearer credential a request presented, already verified upstream. */
+function presentedBearer(req: Request): string | undefined {
+  const header = req.headers.authorization;
+  if (!header) return undefined;
+  const separator = header.indexOf(' ');
+  if (separator <= 0) return undefined;
+  if (header.slice(0, separator).toLowerCase() !== 'bearer') return undefined;
+  return header.slice(separator + 1).trim() || undefined;
+}
+
+function remoteAddressOf(req: Request): string | undefined {
+  return req.socket.remoteAddress?.replace(/^::ffff:/, '') || undefined;
+}
+
+/**
+ * Paired-device routes.
+ *
+ * The QR code carries one shared pairing secret. A device that scanned it
+ * trades that secret for a token of its own (`POST …/devices`), which is what
+ * lets the operator list devices and revoke one without cutting off the rest.
+ */
+function registerPairedDeviceRoutes(
+  app: Application,
+  deps: RegisterWorkspaceLocalControlRoutesDeps,
+  devices: PairedDeviceRegistry,
+  trustedLoopbackMode: boolean,
+): void {
+  const callerDeviceId = (req: Request): string | undefined => {
+    if (listenerIdentityOf(req).kind !== 'local-control') return undefined;
+    const presented = presentedBearer(req);
+    return presented
+      ? deviceIdOf(deps.credentials?.pairingIdOf(presented))
+      : undefined;
+  };
+
+  app.get('/workspace/local-control/devices', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!requestHasOperatorAuthority(req, trustedLoopbackMode)) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+    const current = callerDeviceId(req);
+    res.status(200).json({
+      rememberDevices: devices.rememberDevices,
+      devices: devices
+        .list()
+        .map((device) => ({ ...device, current: device.id === current })),
+    });
+  });
+
+  app.post(
+    '/workspace/local-control/devices',
+    deps.mutate(),
+    async (req, res) => {
+      res.setHeader('Cache-Control', 'no-store');
+      // Only a request that arrived over the LAN listener holds a pairing
+      // credential to trade; the operator's own window uses the runtime token.
+      const presented = presentedBearer(req);
+      if (listenerIdentityOf(req).kind !== 'local-control' || !presented) {
+        res.status(409).json({
+          error: 'Devices pair over the Local Control listener.',
+          code: 'local_control_enroll_not_lan',
+        });
+        return;
+      }
+      const existing = callerDeviceId(req);
+      if (existing) {
+        res.status(200).json({
+          id: existing,
+          rememberDevices: devices.rememberDevices,
+        });
+        return;
+      }
+      // A device that re-scans the QR code while it still holds a valid
+      // token keeps that token instead of becoming a second list entry.
+      const body = (deps.safeBody(req) ?? {}) as { previousToken?: unknown };
+      const previous =
+        typeof body.previousToken === 'string'
+          ? deviceIdOf(deps.credentials?.pairingIdOf(body.previousToken))
+          : undefined;
+      if (previous) {
+        devices.touch(previous);
+        res.status(200).json({
+          id: previous,
+          reused: true,
+          rememberDevices: devices.rememberDevices,
+        });
+        return;
+      }
+      const added = await devices.add({
+        userAgent: req.headers['user-agent'],
+        address: remoteAddressOf(req),
+      });
+      if (!added) {
+        res.status(409).json({
+          error:
+            'Paired device limit reached. Remove a device in the Local ' +
+            'Control settings first.',
+          code: 'local_control_device_limit',
+        });
+        return;
+      }
+      res.status(200).json({
+        id: added.device.id,
+        token: added.token,
+        rememberDevices: devices.rememberDevices,
+      });
+    },
+  );
+
+  app.delete(
+    '/workspace/local-control/devices/:id',
+    deps.mutate(),
+    async (req, res) => {
+      const id = req.params['id'] ?? '';
+      // The operator may remove any device; a device may remove only itself.
+      if (
+        listenerIdentityOf(req).kind !== 'primary' &&
+        callerDeviceId(req) !== id
+      ) {
+        res.status(403).json({
+          error:
+            'Paired devices can only be removed from the machine running ' +
+            'the daemon.',
+          code: 'local_control_remote_device_removal_denied',
+        });
+        return;
+      }
+      if (!(await devices.remove(id))) {
+        res.status(404).json({
+          error: 'Unknown paired device.',
+          code: 'local_control_device_not_found',
+        });
+        return;
+      }
+      res.status(200).json({ removed: true });
+    },
+  );
+
+  app.post(
+    '/workspace/local-control/settings',
+    deps.mutate(),
+    async (req, res) => {
+      if (!requirePrimaryListener(req, res)) return;
+      const body = (deps.safeBody(req) ?? {}) as { rememberDevices?: unknown };
+      if (typeof body.rememberDevices !== 'boolean') {
+        res.status(400).json({
+          error: 'rememberDevices must be a boolean.',
+          code: 'invalid_local_control_settings',
+        });
+        return;
+      }
+      await devices.setRememberDevices(body.rememberDevices);
+      res.status(200).json({ rememberDevices: devices.rememberDevices });
     },
   );
 }

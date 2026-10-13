@@ -135,13 +135,55 @@ function daemonTokenStorageKey(baseUrl?: string): string {
 // rather than break page load.
 function readStoredDaemonToken(key: string): string | undefined {
   try {
-    return window.sessionStorage.getItem(key) || undefined;
+    const perTab = window.sessionStorage.getItem(key);
+    if (perTab) return perTab;
+  } catch {
+    // Fall through to the remembered copy.
+  }
+  return readRememberedDaemonToken(key);
+}
+
+// The remembered copy lives in localStorage. Mobile browsers discard
+// background tabs, and sessionStorage goes with them, so a phone that keeps
+// its token only per-tab has to re-scan the QR code every few hours. Only a
+// daemon that says "remember devices" gets a token stored here.
+function readRememberedDaemonToken(key: string): string | undefined {
+  try {
+    return window.localStorage.getItem(key) || undefined;
   } catch {
     return undefined;
   }
 }
 
-export function persistDaemonToken(token: string, baseUrl?: string): void {
+function removeRememberedDaemonToken(key: string): void {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Storage unavailable; nothing was remembered.
+  }
+}
+
+/**
+ * The token a reload would authenticate with, without touching the URL or
+ * the in-memory cache. Read before a scanned QR token replaces it, so pairing
+ * can tell the daemon "this device already has a token".
+ */
+export function peekStoredDaemonToken(baseUrl?: string): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return readStoredDaemonToken(daemonTokenStorageKey(baseUrl));
+}
+
+/**
+ * `remember: true` also keeps the token for the browser profile; `false`
+ * drops a remembered copy. Left undefined, a remembered copy survives only
+ * while it is the same token — a different one replaces the session without
+ * leaving a stale credential behind for the next tab.
+ */
+export function persistDaemonToken(
+  token: string,
+  baseUrl?: string,
+  options: { remember?: boolean } = {},
+): void {
   const key = daemonTokenStorageKey(baseUrl);
   if (!token) {
     cachedDaemonTokens.delete(key);
@@ -150,6 +192,7 @@ export function persistDaemonToken(token: string, baseUrl?: string): void {
     } catch {
       // Storage unavailable; the in-memory copy is already cleared.
     }
+    removeRememberedDaemonToken(key);
     return;
   }
   cachedDaemonTokens.set(key, token);
@@ -159,6 +202,23 @@ export function persistDaemonToken(token: string, baseUrl?: string): void {
     // Storage unavailable — the token still works for this load via the
     // in-memory cache; a refresh will lose it, matching the old behavior.
   }
+  if (options.remember === true) {
+    try {
+      window.localStorage.setItem(key, token);
+    } catch {
+      // Storage unavailable — the per-tab copy above still applies.
+    }
+  } else if (
+    options.remember === false ||
+    readRememberedDaemonToken(key) !== token
+  ) {
+    removeRememberedDaemonToken(key);
+  }
+}
+
+/** Whether the current URL carries a daemon token (a freshly scanned QR). */
+export function hasDaemonTokenInUrl(): boolean {
+  return readTokenFromLocation() !== undefined;
 }
 
 /**
