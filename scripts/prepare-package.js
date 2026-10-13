@@ -38,7 +38,13 @@ export function preparePackage({
   rootDir = defaultRootDir,
   requireNativeAudioCapture = process.env
     .QWEN_REQUIRE_AUDIO_CAPTURE_PREBUILD === '1',
-  maxPackageUnpackedBytes = DEFAULT_MAX_NPM_PACKAGE_UNPACKED_BYTES,
+  // The budget guards the npm tarball. The desktop runtime reuses this script
+  // but ships inside the app and is never published, so prepare-runtime.js
+  // opts out.
+  maxPackageUnpackedBytes = process.env.QWEN_SKIP_NPM_PACKAGE_SIZE_BUDGET ===
+  '1'
+    ? Infinity
+    : DEFAULT_MAX_NPM_PACKAGE_UNPACKED_BYTES,
 } = {}) {
   const distDir = path.join(rootDir, 'dist');
 
