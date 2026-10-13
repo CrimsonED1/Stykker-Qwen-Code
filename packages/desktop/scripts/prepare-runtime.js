@@ -73,6 +73,8 @@ if (!skipBuild) {
   execFileSync(process.execPath, [npm, 'run', 'prepare:package'], {
     cwd: sourceRoot,
     stdio: 'inherit',
+    // The desktop runtime is bundled into the app, not published to npm.
+    env: { ...process.env, QWEN_SKIP_NPM_PACKAGE_SIZE_BUDGET: '1' },
   });
 }
 

@@ -1254,6 +1254,26 @@ describe('package asset scripts', () => {
     );
   });
 
+  it('skips the unpacked size budget when QWEN_SKIP_NPM_PACKAGE_SIZE_BUDGET=1', () => {
+    const rootDir = createFixtureRoot();
+    createBundleArtifacts(rootDir);
+    writeFile(rootDir, 'dist/chunks/large.bin', '');
+    truncateSync(
+      path.join(rootDir, 'dist', 'chunks', 'large.bin'),
+      128 * 1024 * 1024,
+    );
+    stubConsole();
+    vi.stubEnv('QWEN_SKIP_NPM_PACKAGE_SIZE_BUDGET', '1');
+
+    try {
+      expect(() =>
+        preparePackage({ rootDir, requireNativeAudioCapture: false }),
+      ).not.toThrow();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('omits bundledDependencies when audio-capture artifacts are missing', () => {
     const rootDir = createFixtureRoot();
     rmSync(path.join(rootDir, 'packages', 'audio-capture', 'prebuilds'), {
