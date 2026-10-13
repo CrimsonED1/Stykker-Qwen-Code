@@ -24,8 +24,9 @@ rem  Parameter werden an update-desktop.bat durchgereicht,
 rem  z. B. /F fuer einen erzwungenen Neubau.
 rem ============================================================
 
-set "NODE22=<root>\node-v22.23.3-win-x64"
-set "DESKTOP=<qwen-root>\qwen-code-desktop"
+rem Pfad relativ zum Skript, nicht zu einem festen Laufwerk: der Fork
+rem liegt neben qwen-code-desktop.
+for %%i in ("%~dp0..\..\..\qwen-code-desktop") do set "DESKTOP=%%~fi"
 set "APP=%DESKTOP%\qwen-code-desktop.exe"
 set "RUNTIME=%DESKTOP%\runtime\qwen-code"
 set "SCRIPT=%~dp0update-desktop.bat"

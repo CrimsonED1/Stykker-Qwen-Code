@@ -11,6 +11,9 @@ Regeln für Agenten: [`../QWEN.md`](../QWEN.md).
 
 ## Ordner unter `<qwen-root>`
 
+(Bis 2026-10 unter `<qwen-root>`. Die Skripte leiten ihre Pfade aus dem eigenen Ort ab und
+hängen an keinem Laufwerksbuchstaben.)
+
 | Ordner              | Zweck                                                       |
 | ------------------- | ----------------------------------------------------------- |
 | `qwen-code-fork`    | dieser Fork, Arbeitsbranch `skymain`                        |
@@ -71,7 +74,7 @@ Offene Branches (in `skymain` gemergt, noch kein PR):
 ## Desktop aktualisieren
 
 `stykker\scripts\update-desktop.bat`, **nur manuell, App und alle Qwen-Sessions vorher schließen.**
-Baut den Runtime (Node 22 unter `<root>\node-v22.23.3-win-x64`, Netz nötig), sichert die alte Runtime nach
+Baut den Runtime (Node 22 unter `node-v22.23.3-win-x64` neben dem Ordner `qwen-code`, Netz nötig), sichert die alte Runtime nach
 `runtime\qwen-code.bak-<Zeitstempel>` und kopiert die neue hinein. Bricht ab, wenn die App läuft.
 
 Vor dem Build prüft das Skript `runtime\qwen-code\manifest.json` gegen den Quellcode: **Commit,

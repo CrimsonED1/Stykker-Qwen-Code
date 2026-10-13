@@ -26,10 +26,12 @@ set "FORCE=0"
 if /i "%~1"=="/F" set "FORCE=1"
 if /i "%~1"=="--force" set "FORCE=1"
 
-set "NODE22=<root>\node-v22.23.3-win-x64"
-set "DESKTOP=<qwen-root>\qwen-code-desktop"
-set "RUNTIME=%DESKTOP%\runtime\qwen-code"
+rem Pfade relativ zum Skript, nicht zu einem festen Laufwerk: der Fork
+rem liegt neben qwen-code-desktop, Node 22 eine Ebene darueber.
 for %%i in ("%~dp0..\..") do set "SRC=%%~fi\"
+for %%i in ("%SRC%..\qwen-code-desktop") do set "DESKTOP=%%~fi"
+for %%i in ("%SRC%..\..\node-v22.23.3-win-x64") do set "NODE22=%%~fi"
+set "RUNTIME=%DESKTOP%\runtime\qwen-code"
 set "NEWRUNTIME=%SRC%packages\desktop\runtime\qwen-code"
 
 echo ============================================================
