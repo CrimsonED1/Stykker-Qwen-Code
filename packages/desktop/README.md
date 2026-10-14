@@ -16,6 +16,13 @@ The Tauri app starts `qwen serve` on an ephemeral loopback port with a per-launc
 
 Use **Settings → Daemon → Local Control** to temporarily share the live daemon with a phone on the same Wi-Fi. The Web Shell displays a QR code, keeps the computer awake while sharing is enabled, and closes the LAN listener when the user turns it off.
 
+### Runtime on a network share (Windows)
+
+If the desktop app or its `runtime/` folder sits on a mapped network drive (for example `S:` mapped to `\\server\share`), Windows reports the path in the verbatim form `\\?\UNC\server\share\…`. Two things follow:
+
+- Node cannot load the entry script under that prefix. `layout_from_root` therefore converts it to `\\server\share\…` before the runtime is spawned. `dunce::simplified` only strips disk prefixes such as `\\?\C:\`, so the UNC form needs its own handling.
+- The ACP child loads its modules over SMB and can take about 20 seconds to answer `initialize`, longer than the 10 second default. The app passes `--initialize-timeout-ms 60000` to `qwen serve`. Raise the value further if the share is slower.
+
 ## Local development
 
 From this directory:

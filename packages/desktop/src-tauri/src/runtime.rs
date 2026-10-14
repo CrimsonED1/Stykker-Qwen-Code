@@ -190,10 +190,17 @@ fn layout_from_root(root: PathBuf) -> (PathBuf, PathBuf) {
     let entry = root.join("lib").join("cli-entry.js");
     // Tauri's resource_dir() returns `\\?\` verbatim paths on Windows, and
     // Node's entry-script resolution cannot handle that prefix (#8929).
-    (
-        dunce::simplified(&node).to_path_buf(),
-        dunce::simplified(&entry).to_path_buf(),
-    )
+    (strip_verbatim_prefix(&node), strip_verbatim_prefix(&entry))
+}
+
+// dunce::simplified only strips disk-style `\\?\C:\` prefixes. A network drive
+// (for example a mapped `S:` share) resolves to `\\?\UNC\server\share\...`,
+// which it leaves untouched, so map that form back to `\\server\share\...`.
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    if let Some(unc) = path.to_str().and_then(|s| s.strip_prefix(r"\\?\UNC\")) {
+        return PathBuf::from(format!(r"\\{unc}"));
+    }
+    dunce::simplified(path).to_path_buf()
 }
 
 fn require_file(path: &Path, description: &str) -> Result<(), String> {
@@ -541,6 +548,10 @@ fn runtime_arguments(workspace: &Path) -> Vec<OsString> {
         OsString::from("--workspace"),
         workspace.as_os_str().to_owned(),
         OsString::from("--no-open"),
+        // The runtime lives on a network share, where the ACP child can take
+        // ~20 s to load its modules; the 10 s default would time out.
+        OsString::from("--initialize-timeout-ms"),
+        OsString::from("60000"),
     ]
     .into_iter()
     .collect()
@@ -660,6 +671,21 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn runtime_layout_strips_unc_verbatim_prefix() {
+        let root = PathBuf::from(r"\\?\UNC\server\share\app\runtime").join("qwen-code");
+        let (node, entry) = layout_from_root(root);
+        assert_eq!(
+            entry,
+            PathBuf::from(r"\\server\share\app\runtime\qwen-code\lib\cli-entry.js")
+        );
+        assert_eq!(
+            node,
+            PathBuf::from(r"\\server\share\app\runtime\qwen-code\node\node.exe")
+        );
+    }
+
     #[test]
     fn parses_loopback_listening_line() {
         let url = parse_listening_url(
@@ -712,6 +738,8 @@ mod tests {
                 "--workspace",
                 "/tmp/workspace",
                 "--no-open",
+                "--initialize-timeout-ms",
+                "60000",
             ]
         );
     }
