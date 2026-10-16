@@ -13,6 +13,7 @@ import type {
 } from '../config/config.js';
 import { isSubpath, realpathNearestExisting } from '../utils/paths.js';
 import type { ResolvedExecutionSandboxPolicy } from './sandbox-execution.js';
+import { windowsSystemEnv, windowsCommandProcessor } from './mxc-execution.js';
 
 export function assertShellSandboxCwd(
   policy: Readonly<ShellExecutionSandboxPolicy>,
@@ -79,7 +80,7 @@ export function admitShellSandbox(
     !['read-only', 'workspace-write'].includes(policy.filesystem) ||
     !['open', 'closed'].includes(policy.network) ||
     (policy.requestedBackend !== undefined &&
-      !['auto', 'bwrap', 'landlock'].includes(policy.requestedBackend))
+      !['auto', 'bwrap', 'landlock', 'mxc'].includes(policy.requestedBackend))
   ) {
     throw new Error('Unsupported shell sandbox policy.');
   }
@@ -144,14 +145,19 @@ export async function probeShellSandbox(
   signal: AbortSignal = new AbortController().signal,
 ): Promise<Readonly<ResolvedExecutionSandboxPolicy>> {
   signal.throwIfAborted();
-  if (process.platform !== 'linux')
-    throw new Error('Tool execution sandbox requires Linux.');
-  if (realpathNearestExisting(policy.state) !== policy.state)
-    throw new Error('Sandbox state directory changed after admission.');
-  await mkdir(policy.state, { recursive: true, mode: 0o700 });
-  if (realpathSync(policy.state) !== policy.state)
-    throw new Error('Sandbox state directory changed after admission.');
   const requested = policy.requestedBackend ?? 'auto';
+  if (
+    requested === 'mxc' ||
+    (requested === 'auto' && process.platform === 'win32')
+  ) {
+    await prepareSandboxState(policy);
+    return probeMxc(policy, signal);
+  }
+  if (process.platform !== 'linux')
+    throw new Error(
+      `Tool execution sandbox requires Linux (bwrap or Landlock) or Windows (mxc); ${requested} is not available on ${process.platform}.`,
+    );
+  await prepareSandboxState(policy);
   const failures: string[] = [];
   if (requested === 'auto' || requested === 'bwrap') {
     try {
@@ -219,4 +225,67 @@ export async function probeShellSandbox(
     }
   }
   throw new Error(`Sandbox capability probe failed: ${failures.join('; ')}`);
+}
+
+async function prepareSandboxState(
+  policy: Readonly<ShellExecutionSandboxPolicy>,
+): Promise<void> {
+  if (realpathNearestExisting(policy.state) !== policy.state)
+    throw new Error('Sandbox state directory changed after admission.');
+  await mkdir(policy.state, { recursive: true, mode: 0o700 });
+  if (realpathSync(policy.state) !== policy.state)
+    throw new Error('Sandbox state directory changed after admission.');
+}
+
+async function probeMxc(
+  policy: Readonly<ShellExecutionSandboxPolicy>,
+  signal: AbortSignal,
+): Promise<Readonly<ResolvedExecutionSandboxPolicy>> {
+  const { getPlatformSupport } = await import('@microsoft/mxc-sdk/v1');
+  const support = getPlatformSupport();
+  if (!support.isSupported) {
+    const detail = [support.reason, ...(support.isolationWarnings ?? [])]
+      .filter((value): value is string => Boolean(value))
+      .join('; ');
+    throw new Error(
+      `Sandbox capability probe failed: mxc: ${detail || 'MXC is not supported on this host'}`,
+    );
+  }
+  const { executeMxc } = await import('./mxc-execution.js');
+  const resolved: ResolvedExecutionSandboxPolicy = {
+    ...policy,
+    effectiveBackend: 'mxc',
+    enforcement: policy.maskedPaths?.length ? 'partial' : 'full',
+  };
+  try {
+    const handle = await executeMxc(
+      resolved,
+      {
+        executable: windowsCommandProcessor(),
+        args: ['/d', '/s', '/c', 'exit 0'],
+        cwd: policy.workspace,
+        env: windowsSystemEnv(),
+        windowsVerbatimArguments: true,
+      },
+      () => {},
+      AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+    );
+    const result = await handle.result;
+    if (
+      result.sandboxStatus.state !== 'confirmed' ||
+      result.sandboxStatus.exitCode !== 0 ||
+      result.error ||
+      result.aborted
+    ) {
+      throw new Error(
+        result.error?.message || result.output || result.sandboxStatus.state,
+      );
+    }
+  } catch (error) {
+    signal.throwIfAborted();
+    throw new Error(
+      `Sandbox capability probe failed: mxc: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return Object.freeze(resolved);
 }

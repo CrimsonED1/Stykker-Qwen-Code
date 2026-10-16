@@ -2940,7 +2940,7 @@ const SETTINGS_SCHEMA = {
           properties: {
             backend: {
               type: 'string',
-              enum: ['auto', 'bwrap', 'landlock'],
+              enum: ['auto', 'bwrap', 'landlock', 'mxc'],
             },
             filesystem: {
               type: 'string',

@@ -1445,7 +1445,8 @@
               "enum": [
                 "auto",
                 "bwrap",
-                "landlock"
+                "landlock",
+                "mxc"
               ]
             },
             "filesystem": {

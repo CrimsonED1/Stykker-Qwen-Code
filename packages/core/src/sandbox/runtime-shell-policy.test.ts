@@ -25,6 +25,15 @@ const executeBwrap = vi.hoisted(() => vi.fn());
 const probeLandlock = vi.hoisted(() => vi.fn());
 vi.mock('./bwrap-execution.js', () => ({ executeBwrap }));
 vi.mock('./landlock-execution.js', () => ({ probeLandlock }));
+const mxcSupport = vi.hoisted(() => vi.fn());
+const executeMxc = vi.hoisted(() => vi.fn());
+vi.mock('@microsoft/mxc-sdk/v1', () => ({
+  getPlatformSupport: mxcSupport,
+}));
+vi.mock('./mxc-execution.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./mxc-execution.js')>()),
+  executeMxc,
+}));
 
 const LEGACY_ENV = [
   'SANDBOX',
@@ -416,5 +425,115 @@ describe('runtime shell policy admission', () => {
     } finally {
       timeoutSpy.mockRestore();
     }
+  });
+});
+
+describe('probeShellSandbox on Windows with the mxc backend', () => {
+  let root: string;
+  let policy: {
+    workspace: string;
+    installation: string;
+    state: string;
+    filesystem: 'workspace-write';
+    network: 'closed';
+    requestedBackend?: 'auto' | 'bwrap' | 'landlock' | 'mxc';
+    maskedPaths?: string[];
+  };
+
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'mxc-probe-')));
+    mkdirSync(path.join(root, 'workspace'));
+    policy = {
+      workspace: path.join(root, 'workspace'),
+      installation: root,
+      state: path.join(root, 'state'),
+      filesystem: 'workspace-write',
+      network: 'closed',
+    };
+    executeBwrap.mockClear();
+    probeLandlock.mockClear();
+    mxcSupport.mockReset();
+    executeMxc.mockReset();
+    executeMxc.mockResolvedValue({
+      result: Promise.resolve({
+        sandboxStatus: { state: 'confirmed', exitCode: 0 },
+        error: null,
+        aborted: false,
+        output: '',
+      }),
+    });
+    mxcSupport.mockReturnValue({ isSupported: true, availableMethods: [] });
+    vi.stubGlobal(
+      'process',
+      Object.create(process, { platform: { value: 'win32' } }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('selects mxc for auto and probes cmd.exe through the mxc executor', async () => {
+    const resolved = await probeShellSandbox(policy);
+    expect(resolved).toMatchObject({
+      effectiveBackend: 'mxc',
+      enforcement: 'full',
+    });
+    expect(executeBwrap).not.toHaveBeenCalled();
+    expect(probeLandlock).not.toHaveBeenCalled();
+    const [resolvedPolicy, launch] = executeMxc.mock.calls[0]!;
+    expect(resolvedPolicy).toMatchObject({ effectiveBackend: 'mxc' });
+    expect(launch).toMatchObject({
+      args: ['/d', '/s', '/c', 'exit 0'],
+      cwd: policy.workspace,
+      windowsVerbatimArguments: true,
+    });
+    expect(String(launch.executable).toLowerCase()).toMatch(/cmd\.exe$/);
+  });
+
+  it('reports partial enforcement when masked paths are configured', async () => {
+    policy.maskedPaths = [path.join(policy.workspace, 'secret')];
+    const resolved = await probeShellSandbox({
+      ...policy,
+      requestedBackend: 'mxc',
+    });
+    expect(resolved).toMatchObject({
+      effectiveBackend: 'mxc',
+      enforcement: 'partial',
+    });
+  });
+
+  it('fails with the SDK reason when the platform is not supported', async () => {
+    mxcSupport.mockReturnValue({
+      isSupported: false,
+      reason: 'processcontainer unavailable',
+      availableMethods: [],
+    });
+    await expect(probeShellSandbox(policy)).rejects.toThrow(
+      'capability probe failed: mxc: processcontainer unavailable',
+    );
+    expect(executeMxc).not.toHaveBeenCalled();
+  });
+
+  it('requires a confirmed zero exit from the probe command', async () => {
+    executeMxc.mockResolvedValue({
+      result: Promise.resolve({
+        sandboxStatus: { state: 'confirmed', exitCode: 5 },
+        error: null,
+        aborted: false,
+        output: '',
+      }),
+    });
+    await expect(probeShellSandbox(policy)).rejects.toThrow(
+      'capability probe failed: mxc',
+    );
+  });
+
+  it('rejects bwrap and Landlock requests on Windows', async () => {
+    await expect(
+      probeShellSandbox({ ...policy, requestedBackend: 'bwrap' }),
+    ).rejects.toThrow('bwrap is not available on win32');
+    expect(executeBwrap).not.toHaveBeenCalled();
   });
 });
