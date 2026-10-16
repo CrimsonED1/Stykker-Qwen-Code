@@ -56,6 +56,10 @@ import type {
   ModifyContext,
 } from './modifiable-tool.js';
 import { CommitAttributionService } from '../services/commitAttribution.js';
+import {
+  captureRuntimeFileVersion,
+  writeRuntimeFile,
+} from '../sandbox/runtime-file.js';
 import { createDebugLogger } from '../utils/debugLogger.js';
 import { checkTeamMemorySecrets } from '../memory/team-memory-secret-guard.js';
 
@@ -91,6 +95,7 @@ interface PreparedNotebookEdit extends NotebookEditResult {
   bom: boolean;
   encoding: string | undefined;
   lineEnding: LineEnding;
+  sandboxFileVersion: ReturnType<typeof captureRuntimeFileVersion>;
 }
 
 type NotebookPriorReadDecision =
@@ -494,6 +499,10 @@ class NotebookEditInvocation extends BaseToolInvocation<
     let bom = false;
     let encoding: string | undefined;
     let lineEnding: LineEnding = 'lf';
+    const sandboxFileVersion = captureRuntimeFileVersion(
+      this.config,
+      this.params.notebook_path,
+    );
     try {
       const fileInfo = await this.config.getFileSystemService().readTextFile({
         path: this.params.notebook_path,
@@ -543,6 +552,7 @@ class NotebookEditInvocation extends BaseToolInvocation<
           bom,
           encoding,
           lineEnding,
+          sandboxFileVersion,
         };
       }
 
@@ -552,6 +562,7 @@ class NotebookEditInvocation extends BaseToolInvocation<
         bom,
         encoding,
         lineEnding,
+        sandboxFileVersion,
       };
     } catch (error) {
       if (error instanceof NotebookEditError) {
@@ -628,16 +639,21 @@ class NotebookEditInvocation extends BaseToolInvocation<
         };
       }
 
-      await this.config.getFileSystemService().writeTextFile({
-        path: this.params.notebook_path,
-        content: prepared.updatedContent,
-        toolWriteOrigin: 'notebook_edit',
-        _meta: {
-          bom: prepared.bom,
-          encoding: prepared.encoding,
-          lineEnding: prepared.lineEnding,
+      await writeRuntimeFile(
+        this.config,
+        {
+          path: this.params.notebook_path,
+          content: prepared.updatedContent,
+          toolWriteOrigin: 'notebook_edit',
+          _meta: {
+            bom: prepared.bom,
+            encoding: prepared.encoding,
+            lineEnding: prepared.lineEnding,
+          },
         },
-      });
+        prepared.sandboxFileVersion,
+        signal,
+      );
 
       if (!this.modifyMetadata?.modifiedByUser) {
         CommitAttributionService.getInstance().recordEdit(

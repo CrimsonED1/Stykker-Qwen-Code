@@ -5782,6 +5782,91 @@ describe('loadCliConfig with includeDirectories', () => {
     ).rejects.toThrow('agent execution environments');
   });
 
+  it('admits ACP sessions under the tool sandbox, drops LSP for them, and refuses client MCP servers', async () => {
+    vi.mocked(fs.statSync).mockReturnValue({
+      isDirectory: () => true,
+    } as import('node:fs').Stats);
+    vi.mocked(fs.realpathSync).mockImplementation((value) => value.toString());
+    process.argv = ['node', 'script.js'];
+    const argv = await parseArguments();
+    const policy = {
+      workspace: path.resolve(path.sep, 'sandbox-fixture', 'workspace'),
+      installation: path.resolve('/trusted-install'),
+      state: path.resolve('/trusted-state'),
+      filesystem: 'workspace-write' as const,
+      network: 'closed' as const,
+    };
+    const acpArgv = {
+      ...argv,
+      bare: false,
+      acp: true,
+      experimentalLsp: true,
+    };
+    const config = await loadCliConfig(
+      {},
+      acpArgv,
+      policy.workspace,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      { shellExecutionSandbox: policy },
+    );
+    expect(config.getShellExecutionSandbox()).toBeDefined();
+    expect(config.isLspEnabled()).toBe(false);
+
+    await expect(
+      loadCliConfig(
+        {},
+        acpArgv,
+        policy.workspace,
+        [],
+        undefined,
+        undefined,
+        {
+          'client-server': new ServerConfig.MCPServerConfig('client-cmd'),
+        },
+        undefined,
+        false,
+        { shellExecutionSandbox: policy },
+      ),
+    ).rejects.toThrow(
+      'tools.executionSandbox does not support MCP servers supplied by the client for this session.',
+    );
+  });
+
+  it('still refuses LSP with the tool sandbox outside ACP', async () => {
+    vi.mocked(fs.statSync).mockReturnValue({
+      isDirectory: () => true,
+    } as import('node:fs').Stats);
+    vi.mocked(fs.realpathSync).mockImplementation((value) => value.toString());
+    process.argv = ['node', 'script.js'];
+    const argv = await parseArguments();
+    const policy = {
+      workspace: path.resolve(path.sep, 'sandbox-fixture', 'workspace'),
+      installation: path.resolve('/trusted-install'),
+      state: path.resolve('/trusted-state'),
+      filesystem: 'workspace-write' as const,
+      network: 'closed' as const,
+    };
+    await expect(
+      loadCliConfig(
+        {},
+        { ...argv, bare: false, experimentalLsp: true },
+        policy.workspace,
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        { shellExecutionSandbox: policy },
+      ),
+    ).rejects.toThrow('does not yet support');
+  });
+
   it('should ignore coreTools overrides in bare mode', async () => {
     process.argv = ['node', 'script.js', '--bare', '--core-tools', 'web_fetch'];
     const argv = await parseArguments();

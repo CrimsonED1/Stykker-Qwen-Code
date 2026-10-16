@@ -56,7 +56,6 @@ export function admitShellSandbox(
   if (
     params.provisionalWorkspace ||
     params.sdkMode ||
-    params.experimentalZedIntegration ||
     params.sandbox ||
     params.overrideExtensions?.some(
       (name) => name.trim() !== '' && name.trim().toLowerCase() !== 'none',
@@ -73,7 +72,7 @@ export function admitShellSandbox(
     params.executionEnvironmentFactory !== undefined
   ) {
     throw new Error(
-      'Tool execution sandbox does not support SDK/ACP sessions, provisional workspaces, extensions, MCP, discovery, LSP, agent execution environments, or a whole-CLI sandbox.',
+      'Tool execution sandbox does not support SDK sessions, provisional workspaces, extensions, MCP, discovery, LSP, agent execution environments, or a whole-CLI sandbox.',
     );
   }
   if (

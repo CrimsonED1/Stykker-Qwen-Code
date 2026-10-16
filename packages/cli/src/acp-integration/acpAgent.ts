@@ -3070,11 +3070,6 @@ export async function runAcpAgent(
     externalToolGuardProviderAttached?: boolean;
   },
 ) {
-  if (config.getShellExecutionSandbox?.()) {
-    throw new Error(
-      'Tool execution sandbox does not support ACP sessions yet.',
-    );
-  }
   // Conversations-runtime provenance, accepted by the CLI entry point only in
   // ACP mode with the private parent capability present. Frozen for the
   // process lifetime alongside the writer-lease snapshot.
@@ -5290,11 +5285,6 @@ class QwenAgent implements Agent {
     private readonly hostExecutionEngine: SessionExecutionEngine = 'legacy',
     private readonly managedRuntimeEnvironment?: ConfigParameters['managedRuntimeEnvironment'],
   ) {
-    if (config.getShellExecutionSandbox?.()) {
-      throw new Error(
-        'Tool execution sandbox does not support ACP sessions yet.',
-      );
-    }
     // Pool kill switch via env var so operators can A/B compare or
     // roll back without rebuilding. `run-qwen-serve.ts` sets this when
     // `--no-mcp-pool` is passed at daemon startup.
@@ -15607,8 +15597,10 @@ class QwenAgent implements Agent {
             lenientToolWarmup: true,
           }
         : initializeOptions;
+    // Checkpointing is unavailable under a tool sandbox (Config rejects it).
     if (
       !effectiveInitializeOptions.skipFileCheckpointing &&
+      !config.getShellExecutionSandbox?.() &&
       typeof config.enableFileCheckpointing === 'function'
     ) {
       config.enableFileCheckpointing();
@@ -15985,6 +15977,9 @@ class QwenAgent implements Agent {
 
   private setupFileSystem(config: Config): void {
     if (!this.clientCapabilities?.fs) return;
+    // A tool sandbox keeps its own file path (Read/Write/Edit through the
+    // confined worker); Config refuses a delegated filesystem service there.
+    if (config.getShellExecutionSandbox?.()) return;
 
     const acpFileSystemService = new AcpFileSystemService(
       this.connection,

@@ -236,7 +236,6 @@ describe('runtime shell policy admission', () => {
   it.each<Partial<ConfigParameters>>([
     { provisionalWorkspace: true },
     { sdkMode: true },
-    { experimentalZedIntegration: true },
     { overrideExtensions: ['extension'] },
     { mcpServers: { x: { command: 'node' } } },
     { topTierMcpServers: { x: { command: 'node' } } },
@@ -256,6 +255,17 @@ describe('runtime shell policy admission', () => {
     expect(() => admit({ ...params, ...overrides }, root)).toThrow(
       'does not support',
     );
+  });
+  it('admits an ACP session (experimentalZedIntegration) but still rejects SDK mode', () => {
+    expect(() =>
+      admit({ ...params, experimentalZedIntegration: true }, root),
+    ).not.toThrow();
+    expect(() =>
+      admit(
+        { ...params, experimentalZedIntegration: true, sdkMode: true },
+        root,
+      ),
+    ).toThrow('does not support SDK sessions');
   });
   it('probes a fixed command and requires a confirmed zero exit receipt', async () => {
     vi.stubGlobal(

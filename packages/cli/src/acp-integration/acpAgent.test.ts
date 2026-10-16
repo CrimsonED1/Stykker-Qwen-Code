@@ -1499,15 +1499,12 @@ describe('runAcpAgent shutdown cleanup', () => {
     processOffSpy.mockRestore();
   });
 
-  it('rejects a tool sandbox before ACP initialization or transport setup', async () => {
+  it('starts ACP with a tool sandbox boot config and sets up the transport', async () => {
     mockConfig.getShellExecutionSandbox = vi
       .fn()
       .mockReturnValue({ network: 'closed' });
-    await expect(
-      runAcpAgent(mockConfig, mockSettings, mockArgv),
-    ).rejects.toThrow('does not support ACP sessions');
-    expect(mockConfig.initialize).not.toHaveBeenCalled();
-    expect(ndJsonStream).not.toHaveBeenCalled();
+    void runAcpAgent(mockConfig, mockSettings, mockArgv);
+    await vi.waitFor(() => expect(ndJsonStream).toHaveBeenCalledOnce());
   });
 
   it('starts telemetry only after a matching successful initialize response is sent', async () => {
@@ -4507,6 +4504,60 @@ describe('QwenAgent MCP SSE/HTTP support', () => {
 
     mockConnectionState.resolve();
     await agentPromise;
+  });
+
+  it('creates a session under a tool sandbox without delegated filesystem or checkpointing', async () => {
+    const innerConfig = makeInnerConfig();
+    const enableFileCheckpointing = vi.fn();
+    const setFileSystemService = vi.fn();
+    Object.assign(innerConfig, {
+      getShellExecutionSandbox: vi.fn().mockReturnValue({ workspace: '/tmp' }),
+      enableFileCheckpointing,
+      setFileSystemService,
+    });
+    vi.mocked(loadCliConfig).mockResolvedValue(
+      innerConfig as unknown as Config,
+    );
+    vi.mocked(Session).mockImplementation(
+      (sessionId: string) =>
+        ({
+          getDefaultReasoningConfig: vi.fn(),
+          getId: vi.fn().mockReturnValue(sessionId),
+          shouldHintAskUserQuestionRestore: vi.fn().mockReturnValue(false),
+          sendAvailableCommandsUpdate: vi.fn().mockResolvedValue(undefined),
+          replayHistory: vi.fn().mockResolvedValue(undefined),
+          installRewriter: vi.fn(),
+          startCronScheduler: vi.fn(),
+          dispose: vi.fn(),
+        }) as unknown as InstanceType<typeof Session>,
+    );
+
+    const agentPromise = runAcpAgent(
+      mockConfig,
+      makeSessionSettings(),
+      mockArgv,
+    );
+    await vi.waitFor(() => expect(capturedAgentFactory).toBeDefined());
+    const agent = capturedAgentFactory!({
+      get closed() {
+        return mockConnectionState.promise;
+      },
+    }) as AgentLike;
+    try {
+      await agent.initialize({
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: true },
+        },
+      });
+      await agent.newSession({ cwd: '/tmp', mcpServers: [] });
+
+      expect(loadCliConfig).toHaveBeenCalled();
+      expect(enableFileCheckpointing).not.toHaveBeenCalled();
+      expect(setFileSystemService).not.toHaveBeenCalled();
+    } finally {
+      mockConnectionState.resolve();
+      await agentPromise;
+    }
   });
 
   it('does not record a session model on an empty new daemon session', async () => {
