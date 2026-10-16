@@ -119,9 +119,8 @@ Dateischreiben der Werkzeuge auf den Projektordner; unter Windows macht das Micr
 1. **Runtime mit MXC bauen/einsetzen** wie unter „Desktop aktualisieren“. Die Runtime enthält das SDK unter
    `runtime\qwen-code\lib\node_modules\@microsoft\mxc-sdk` (nur win32-x64, ca. +40 MB).
 2. **Windows vorbereiten (einmalig, Admin):** `stykker\scripts\mxc-host-prep.bat` doppelklicken und die UAC-Abfrage
-   bestätigen. Das Skript sucht `wxc-host-prep.exe` (Runtime, Fork, Worktrees daneben) und führt
-   `prepare-system-drive` für das Systemlaufwerk, das Laufwerk von Qwen und das von `%TEMP%` aus.
-   Vorher anschauen, was passieren würde: `mxc-host-prep.bat -List` (ohne Admin).
+   bestätigen. Weitere Projektordner mit `-Projects D:\Projekte,D:\Code`. Was fehlt, zeigt vorher und nachher
+   `mxc-host-prep.bat -Check` (ohne Admin).
 3. **Sandbox einschalten** in den User-Settings (`%USERPROFILE%\.qwen\settings.json`) oder, für Firmen, in den
    System-Settings (`C:\ProgramData\qwen-code\settings.json`):
    ```json
@@ -144,15 +143,27 @@ Hinweis: In der Desktop-App (ACP-Sitzungen) lehnt Qwen die Sandbox derzeit noch 
 
 ### Was Schritt 2 an Windows ändert
 
-Je Laufwerksstamm (`C:\`, `D:\`, …) zwei Einträge, nicht vererbt, nur
-`FILE_READ_ATTRIBUTES | FILE_READ_EA | READ_CONTROL | SYNCHRONIZE`:
-`ALL APPLICATION PACKAGES` (`S-1-15-2-1`) und `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`).
-Kein Auflisten, kein Lesen von Dateien, kein Schreiben; Unterordner unberührt. Ohne diese Einträge brechen `node.exe`,
-`npm` und der Datei-Worker in der Sandbox mit `EPERM: lstat 'X:\'` ab (Windows-Standard: Container dürfen den
-Laufwerksstamm nicht einmal abfragen). Quelle: MXC-Doku `docs/backends/process-container/host-prep.md`.
+Immer dieselben zwei Einträge, nur `FILE_READ_ATTRIBUTES | FILE_READ_EA | READ_CONTROL | SYNCHRONIZE`, für
+`ALL APPLICATION PACKAGES` (`S-1-15-2-1`) und `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`):
 
-Rückgängig: `mxc-host-prep.bat -Undo` (entfernt genau diese Einträge). Andere Laufwerke: `-Drives C,D`.
-Firmen können denselben Befehl (`wxc-host-prep.exe prepare-system-drive --target X:\`) per Intune/GPO verteilen.
+| Wo                                                                                                 | Vererbung                   | Wie                                                         |
+| -------------------------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------------------------- |
+| Laufwerksstamm (`C:\`, `D:\`, …)                                                                   | keine                       | `wxc-host-prep.exe prepare-system-drive --target X:\` (MXC) |
+| jeder Ordner auf dem Weg zu `%TEMP%` und zu den Projekt-Wurzeln (`C:\Users`, `C:\Users\<name>`, …) | keine                       | Skript                                                      |
+| Projekt-Wurzeln (Qwen-Ordner, `Dokumente\Qwen`, `-Projects`)                                       | an Unterordner (nur Ordner) | Skript                                                      |
+
+Kein Auflisten, kein Lesen von Dateiinhalten, kein Schreiben. Hintergrund: `node.exe` und `npm` prüfen beim Start jeden
+Ordner im Pfad (`lstat`); Sandbox-Container dürfen unter Windows aber nicht einmal Attribute eines Ordners abfragen,
+für den sie keinen Eintrag haben → `EPERM: lstat 'C:\Users'`. MXC selbst richtet nur die Laufwerksstämme ein
+(Doku `docs/backends/process-container/host-prep.md`); die Zwischenordner ergänzt das Skript.
+
+Was das Skript gesetzt hat, steht in `C:\ProgramData\qwen-code\mxc-host-prep.json`; `mxc-host-prep.bat -Undo`
+entfernt genau das (und die Einträge an den Laufwerksstämmen). Ordner, die schon passen (z. B. `Program Files`),
+bleiben unberührt. Firmen können dasselbe per Intune/GPO verteilen.
+
+Vollständigkeit: Die Ordnerkette ist berechenbar (`-Check`). Was Werkzeuge darüber hinaus lesen (z. B. `.npmrc` im
+Benutzerprofil), zeigt erst ein Probelauf in der Sandbox; MXCs eigene Protokollierung (`captureDenials`) wird auf
+Windows 11 25H2 (Build 26200) nicht unterstützt.
 
 ### Bekannte Grenzen
 
