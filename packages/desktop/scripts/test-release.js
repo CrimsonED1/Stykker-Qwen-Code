@@ -1009,6 +1009,39 @@ function testRuntimeTargetMappings() {
     /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/,
     'the darwin-x64 prebuild must stay pinned so a cross-building leg can fetch its locked version',
   );
+
+  // The MXC SDK is staged only for win32-x64 and must stay pinned exactly, and
+  // the bundle must keep its dynamic import external so Node resolves it from
+  // lib/node_modules.
+  assert.match(
+    rootPackage.optionalDependencies?.['@microsoft/mxc-sdk'],
+    /^\d+\.\d+\.\d+$/,
+    'the MXC SDK must stay pinned exactly in optionalDependencies',
+  );
+  assert.match(
+    prepareRuntime,
+    /function stageMxcSdk\(desktopTarget\) \{\n {2}if \(desktopTarget !== 'win32-x64'\) return;/,
+    'stageMxcSdk must stage only win32-x64 and skip other targets silently',
+  );
+  assert.match(
+    prepareRuntime,
+    /'bin', 'x64', 'wxc-exec\.exe'/,
+    'stageMxcSdk must verify wxc-exec.exe is present',
+  );
+  assert.match(
+    prepareRuntime,
+    /'bin', 'x64', 'mxc_ffi\.dll'/,
+    'stageMxcSdk must verify mxc_ffi.dll is present',
+  );
+  const esbuildConfig = fs.readFileSync(
+    path.join(repoRoot, 'esbuild.config.js'),
+    'utf8',
+  );
+  assert.match(
+    esbuildConfig,
+    /'@microsoft\/mxc-sdk',\n\s+'koffi',\n\s+'@koromix\/koffi-\*',/,
+    'esbuild must keep the MXC SDK and its koffi binding external',
+  );
 }
 
 function testRuntimePreparation(directory) {
