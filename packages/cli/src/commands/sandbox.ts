@@ -21,6 +21,36 @@ interface SandboxArgs {
   '--'?: string[];
 }
 
+async function windowsShellPayload(
+  command: string[],
+  cwd: string,
+  env: Record<string, string>,
+) {
+  const { getShellConfiguration, escapeShellArg } = await import(
+    '@qwen-code/qwen-code-core/utils/shell-utils.js'
+  );
+  const { launchCommand } = await import(
+    '@qwen-code/qwen-code-core/services/shellExecutionService.js'
+  );
+  const { shell } = getShellConfiguration();
+  const quoteCmd = (arg: string) =>
+    /^[\w.\\/:=+-]+$/.test(arg) ? arg : `"${arg.replace(/"/g, '""')}"`;
+  const line =
+    shell === 'cmd'
+      ? command.map(quoteCmd).join(' ')
+      : shell === 'powershell'
+        ? ['&', ...command.map((arg) => escapeShellArg(arg, shell))].join(' ')
+        : command.map((arg) => escapeShellArg(arg, shell)).join(' ');
+  const launch = launchCommand(line);
+  return {
+    executable: launch.executable,
+    args: launch.args,
+    cwd,
+    env,
+    windowsVerbatimArguments: launch.shell === 'cmd',
+  };
+}
+
 export const sandboxCommand: CommandModule = {
   command: 'sandbox [cmd...]',
   describe: 'Inspect tool confinement, verify it, or run one confined command',
@@ -137,7 +167,11 @@ export const sandboxCommand: CommandModule = {
         );
         report(`Command network: ${policy.network}`);
         report('Model, authentication and session traffic stay on the host.');
-        report('Host reads and pathname Unix sockets remain accessible.');
+        report(
+          policy.effectiveBackend === 'mxc'
+            ? `Host access follows the MXC process container policy${policy.maskedPaths?.length ? '; masked paths are not enforced on Windows' : ''}.`
+            : 'Host reads and pathname Unix sockets remain accessible.',
+        );
         report(
           'Backend probe: passed (admission only; full-session viability is not tested).',
         );
@@ -168,13 +202,15 @@ export const sandboxCommand: CommandModule = {
             // env resolves PATH inside confinement and receives literal argv.
             const handle = await executeSandbox(
               policy,
-              {
-                executable: '/usr/bin/env',
-                args: ['--', ...command],
-                cwd: policy.workspace,
-                env,
-                inheritStdin: !process.stdin.isTTY,
-              },
+              policy.effectiveBackend === 'mxc'
+                ? await windowsShellPayload(command, policy.workspace, env)
+                : {
+                    executable: '/usr/bin/env',
+                    args: ['--', ...command],
+                    cwd: policy.workspace,
+                    env,
+                    inheritStdin: !process.stdin.isTTY,
+                  },
               (event) => {
                 if (event.type === 'raw_data') {
                   const stream =
@@ -205,6 +241,13 @@ export const sandboxCommand: CommandModule = {
             process.stdout.removeListener('error', stdoutError);
             process.stderr.removeListener('error', stderrError);
           }
+        }
+        if (policy.effectiveBackend === 'mxc') {
+          if (args.verify)
+            report(
+              'Verification skipped: --verify checks the bwrap and Landlock boundaries and does not apply to mxc.',
+            );
+          return;
         }
         if (!args.verify) return;
         const outside = path.join(fixture, 'host-writable');

@@ -5,8 +5,12 @@
  */
 
 import type { Config } from '../config/config.js';
-import { ShellExecutionService } from '../services/shellExecutionService.js';
+import {
+  ShellExecutionService,
+  launchCommand,
+} from '../services/shellExecutionService.js';
 import type {
+  ProcessLaunch,
   ShellExecutionHandle,
   ShellExecutionConfig,
   ShellExecuteOptions,
@@ -60,9 +64,25 @@ export function executeRuntimeShell(
         (entry): entry is [string, string] => typeof entry[1] === 'string',
       ),
     );
+    let launch: ProcessLaunch = {
+      executable: '/bin/bash',
+      args: ['-c', command],
+      cwd,
+      env,
+    };
+    if (policy.effectiveBackend === 'mxc') {
+      const shell = launchCommand(command);
+      launch = {
+        executable: shell.executable,
+        args: shell.args,
+        cwd,
+        env,
+        windowsVerbatimArguments: shell.shell === 'cmd',
+      };
+    }
     return executeSandbox(
       policy,
-      { executable: '/bin/bash', args: ['-c', command], cwd, env },
+      launch,
       onOutput,
       signal,
       usePty,

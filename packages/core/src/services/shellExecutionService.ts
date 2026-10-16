@@ -183,9 +183,14 @@ export interface ProcessLaunch {
   env: Readonly<Record<string, string>>;
   stdin?: string | Buffer;
   inheritStdin?: boolean;
+  /**
+   * Windows only, for cmd.exe: append the last argument (the command string)
+   * without MSVC CRT escaping, as the unsandboxed shell path does.
+   */
+  windowsVerbatimArguments?: boolean;
 }
 
-function launchCommand(input: string | ProcessLaunch) {
+export function launchCommand(input: string | ProcessLaunch) {
   if (typeof input !== 'string') {
     return {
       executable: input.executable,

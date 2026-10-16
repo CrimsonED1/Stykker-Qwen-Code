@@ -65,7 +65,12 @@ describe('sandbox file worker client', () => {
     result();
   });
   it('uses only pipe stdin and accepts a confirmed successful reply', async () => {
+    vi.stubGlobal(
+      'process',
+      Object.create(process, { platform: { value: 'linux' } }),
+    );
     await writeSandboxFile(policy, request, new AbortController().signal);
+    vi.unstubAllGlobals();
     const launch = vi.mocked(executeSandbox).mock.calls[0][1];
     expect(launch.args).toEqual(['/installed/file-worker.js']);
     expect(launch.env).toEqual({ PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' });
@@ -180,5 +185,29 @@ describe('sandbox file worker client', () => {
       'stopped',
     );
     expect(executeSandbox).not.toHaveBeenCalled();
+  });
+});
+
+describe('sandbox file worker client on Windows', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    result();
+  });
+  it('passes the Windows system directories instead of the POSIX PATH', async () => {
+    vi.stubGlobal(
+      'process',
+      Object.create(process, { platform: { value: 'win32' } }),
+    );
+    try {
+      await writeSandboxFile(policy, request, new AbortController().signal);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const launch = vi.mocked(executeSandbox).mock.calls[0][1];
+    expect(launch.env).toMatchObject({
+      SystemRoot: expect.any(String),
+      PATH: expect.stringContaining('System32'),
+    });
+    expect(launch.env).not.toHaveProperty('LANG');
   });
 });

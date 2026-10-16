@@ -181,6 +181,12 @@ const external = [
   '@teddyzhu/clipboard-win32-x64-msvc',
   '@teddyzhu/clipboard-win32-arm64-msvc',
   'sharp',
+  // The MXC SDK loads its native FFI binding (koffi and its per-platform
+  // packages) and its bin/ directory relative to its own install location, so
+  // it must resolve from lib/node_modules at runtime rather than being inlined.
+  '@microsoft/mxc-sdk',
+  'koffi',
+  '@koromix/koffi-*',
 ];
 
 // Name of the directory under `dist/` that esbuild emits shared chunks into.

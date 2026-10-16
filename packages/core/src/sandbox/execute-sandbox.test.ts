@@ -8,8 +8,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const executeBwrap = vi.hoisted(() => vi.fn());
 const executeLandlock = vi.hoisted(() => vi.fn());
+const executeMxc = vi.hoisted(() => vi.fn());
 vi.mock('./bwrap-execution.js', () => ({ executeBwrap }));
 vi.mock('./landlock-execution.js', () => ({ executeLandlock }));
+vi.mock('./mxc-execution.js', () => ({ executeMxc }));
 
 import { executeSandbox } from './execute-sandbox.js';
 
@@ -33,6 +35,7 @@ describe('sandbox backend dispatch', () => {
   it.each([
     ['bwrap', executeBwrap],
     ['landlock', executeLandlock],
+    ['mxc', executeMxc],
   ] as const)(
     'dispatches only to the resolved %s backend',
     async (backend, run) => {
@@ -44,9 +47,9 @@ describe('sandbox backend dispatch', () => {
         new AbortController().signal,
       );
       expect(run).toHaveBeenCalledOnce();
-      expect(
-        backend === 'bwrap' ? executeLandlock : executeBwrap,
-      ).not.toHaveBeenCalled();
+      for (const other of [executeBwrap, executeLandlock, executeMxc]) {
+        if (other !== run) expect(other).not.toHaveBeenCalled();
+      }
     },
   );
 
@@ -56,5 +59,6 @@ describe('sandbox backend dispatch', () => {
     ).rejects.toThrow('backend was not resolved');
     expect(executeBwrap).not.toHaveBeenCalled();
     expect(executeLandlock).not.toHaveBeenCalled();
+    expect(executeMxc).not.toHaveBeenCalled();
   });
 });

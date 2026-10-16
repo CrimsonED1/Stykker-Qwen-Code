@@ -72,6 +72,14 @@ describe('operator execution sandbox policy', () => {
       'tools.executionSandbox',
     );
   });
+  it('accepts an explicit mxc backend', () => {
+    expect(
+      parseExecutionSandboxSettings({
+        ...writable,
+        backend: 'mxc',
+      }),
+    ).toEqual({ ...writable, backend: 'mxc' });
+  });
   it('accepts an explicit Landlock backend for capability validation at startup', () => {
     expect(
       parseExecutionSandboxSettings({

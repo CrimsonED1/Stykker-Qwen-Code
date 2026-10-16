@@ -58,6 +58,16 @@ const NODE_PTY_PREBUILD_PACKAGE = new Map([
   ['win32-x64', '@lydell/node-pty-win32-x64'],
 ]);
 
+const MXC_SDK_PACKAGE = '@microsoft/mxc-sdk';
+// Linux-only executables, the arm64 tree and the Linux-only FFI library are
+// never loaded on win32-x64.
+const MXC_SDK_UNUSED_ENTRIES = [
+  'bin/arm64',
+  'bin/x64/libmxc_ffi.so',
+  'bin/x64/lxc-exec',
+  'bin/x64/unix-test-proxy',
+];
+
 const npm = process.env.npm_execpath;
 if (!npm) throw new Error('npm_execpath is unavailable. Run through npm.');
 
@@ -97,6 +107,7 @@ try {
   fs.mkdirSync(binDir, { recursive: true });
   copyDirectory(distDir, libDir);
   stageNodePty(target);
+  stageMxcSdk(target);
   await installNodeRuntime(nodeDir, target);
   writeLaunchers(target);
   copyRequiredFile(
@@ -306,6 +317,111 @@ function stageNodePty(desktopTarget) {
   } finally {
     fs.rmSync(installDir, { recursive: true, force: true });
   }
+}
+
+// The MXC backend (tools.executionSandbox backend "mxc") loads
+// @microsoft/mxc-sdk through `await import('@microsoft/mxc-sdk/v1')`. The
+// bundle keeps that import external (esbuild.config.js), so Node resolves it
+// from lib/node_modules, the same way as @lydell/node-pty. The SDK finds its
+// wxc-exec.exe and mxc_ffi.dll under its own bin/ directory and its koffi FFI
+// binding beside it, so the whole tree is staged together. Only win32-x64 ships
+// the Windows process-container backend; other targets skip it silently.
+function stageMxcSdk(desktopTarget) {
+  if (desktopTarget !== 'win32-x64') return;
+  const sdkVersion = exactRootDependency(MXC_SDK_PACKAGE);
+  // koffi and semver are read from the checkout's own frozen install, and the
+  // koffi package's Windows binding version comes from koffi's own optional
+  // dependency list. This pins the same versions the lockfile verified, without
+  // a new direct dependency and without depending on this host's platform.
+  const koffiManifest = installedManifest(sourceRoot, 'koffi');
+  const koffiWindowsVersion =
+    koffiManifest.optionalDependencies?.['@koromix/koffi-win32-x64'];
+  if (!koffiWindowsVersion) {
+    throw new Error('koffi does not declare @koromix/koffi-win32-x64');
+  }
+  const koffiVersion = koffiManifest.version;
+  const semverVersion = installedManifest(sourceRoot, 'semver').version;
+  const installDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), 'qwen-desktop-mxc-'),
+  );
+  try {
+    execFileSync(
+      process.execPath,
+      [
+        npm,
+        'install',
+        '--prefix',
+        installDir,
+        '--package-lock=false',
+        '--no-save',
+        '--ignore-scripts',
+        '--force',
+        '--no-audit',
+        '--no-fund',
+        `${MXC_SDK_PACKAGE}@${sdkVersion}`,
+        `koffi@${koffiVersion}`,
+        `@koromix/koffi-win32-x64@${koffiWindowsVersion}`,
+        `semver@${semverVersion}`,
+      ],
+      { cwd: installDir, stdio: 'inherit' },
+    );
+    const modulesSrc = path.join(installDir, 'node_modules');
+    const sdkSrc = path.join(modulesSrc, MXC_SDK_PACKAGE);
+    for (const required of [
+      path.join(sdkSrc, 'bin', 'x64', 'wxc-exec.exe'),
+      path.join(sdkSrc, 'bin', 'x64', 'mxc_ffi.dll'),
+    ]) {
+      if (!fs.existsSync(required)) {
+        throw new Error(`${MXC_SDK_PACKAGE} is missing ${required}`);
+      }
+    }
+    const modulesDest = path.join(libDir, 'node_modules');
+    fs.cpSync(sdkSrc, path.join(modulesDest, MXC_SDK_PACKAGE), {
+      recursive: true,
+      dereference: true,
+      verbatimSymlinks: false,
+      filter: (source) => {
+        const relative = path
+          .relative(sdkSrc, source)
+          .split(path.sep)
+          .join('/');
+        return !MXC_SDK_UNUSED_ENTRIES.some(
+          (entry) => relative === entry || relative.startsWith(`${entry}/`),
+        );
+      },
+    });
+    for (const name of ['koffi', '@koromix/koffi-win32-x64', 'semver']) {
+      fs.cpSync(path.join(modulesSrc, name), path.join(modulesDest, name), {
+        recursive: true,
+        dereference: true,
+        verbatimSymlinks: false,
+      });
+    }
+  } finally {
+    fs.rmSync(installDir, { recursive: true, force: true });
+  }
+}
+
+function exactRootDependency(name) {
+  const rootPackage = JSON.parse(
+    fs.readFileSync(path.join(sourceRoot, 'package.json'), 'utf8'),
+  );
+  const version = rootPackage.optionalDependencies?.[name];
+  if (
+    !version ||
+    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version)
+  ) {
+    throw new Error(`${name} must be pinned exactly in optionalDependencies`);
+  }
+  return version;
+}
+
+function installedManifest(root, name) {
+  const manifestPath = path.join(root, 'node_modules', name, 'package.json');
+  if (!fs.existsSync(manifestPath)) {
+    throw new Error(`${name} is not installed in ${root}`);
+  }
+  return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
 }
 
 // The exact versions declared by the checkout the release job installed

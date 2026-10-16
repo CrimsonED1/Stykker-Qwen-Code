@@ -272,7 +272,7 @@ export interface PromptToolSurface {
   declaredTools?: ReadonlySet<string>;
   agentReachable?: boolean;
   executionSandboxFilesystem?: 'read-only' | 'workspace-write';
-  executionSandboxBackend?: 'bwrap' | 'landlock';
+  executionSandboxBackend?: 'bwrap' | 'landlock' | 'mxc';
   executionSandboxNetwork?: 'open' | 'closed';
 }
 
@@ -613,6 +613,12 @@ ${(function () {
   const isGenericSandbox = !!process.env['SANDBOX']; // Check if SANDBOX is set to any non-empty value
 
   if (executionSandboxFilesystem) {
+    if (surface?.executionSandboxBackend === 'mxc') {
+      return `
+# Tool Execution Sandbox (MXC, Windows)
+Shell commands and file mutations run in an MXC process container (Windows AppContainer). The workspace is ${executionSandboxFilesystem === 'workspace-write' ? 'writable' : 'read-only'} for file content and directory changes; the operator's installation and state directories are read-only or inaccessible. Command network policy is ${surface.executionSandboxNetwork ?? 'open'}. Masked paths are not enforced on Windows. A refused write fails with a permission error ('Access is denied'). Report the refusal to the user and name the refused path. Do NOT work around a refusal by writing somewhere else, escalating privileges, or retrying the same write.
+`;
+    }
     if (surface?.executionSandboxBackend === 'landlock') {
       return `
 # Tool Execution Sandbox (Landlock, partial)

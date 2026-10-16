@@ -179,6 +179,32 @@ describe('qwen sandbox tool boundary', () => {
     expect(mocks.execute).not.toHaveBeenCalled();
   });
 
+  it('reports mxc, skips the bwrap and Landlock verification, and does not verify', async () => {
+    mocks.probe.mockImplementation(async (policy: object) => ({
+      ...policy,
+      effectiveBackend: 'mxc',
+      enforcement: 'full',
+    }));
+    await run({ verify: true });
+    const stdout = mocks.stdout.mock.calls.flat().join('\n');
+    expect(stdout).toContain('backend: auto → mxc (full)');
+    expect(stdout).toContain('Verification skipped');
+    expect(mocks.execute).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+  it('runs a command under mxc through the Windows shell payload', async () => {
+    mocks.probe.mockImplementation(async (policy: object) => ({
+      ...policy,
+      effectiveBackend: 'mxc',
+      enforcement: 'full',
+    }));
+    await run({ '--': ['echo', 'hi'] });
+    expect(mocks.execute).toHaveBeenCalledOnce();
+    const payload = mocks.execute.mock.calls[0][1];
+    expect(payload.executable).not.toBe('/usr/bin/env');
+    expect(payload.args.join(' ')).toContain('hi');
+    expect(payload.cwd).toBe(process.cwd());
+  });
   it('retains the operator policy in bare mode', async () => {
     await run({ bare: true });
     expect(mocks.minimal).toHaveBeenCalledOnce();

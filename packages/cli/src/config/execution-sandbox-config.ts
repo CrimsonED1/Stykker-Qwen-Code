@@ -14,9 +14,9 @@ export function createExecutionSandboxPolicy(
   settings: ExecutionSandboxSettings,
   workspace: string,
 ): ShellExecutionSandboxPolicy {
-  if (process.platform !== 'linux') {
+  if (process.platform !== 'linux' && process.platform !== 'win32') {
     throw new Error(
-      'tools.executionSandbox requires Linux with a compatible bwrap or Landlock backend.',
+      'tools.executionSandbox requires Linux with a compatible bwrap or Landlock backend, or Windows with the mxc backend.',
     );
   }
   return {
