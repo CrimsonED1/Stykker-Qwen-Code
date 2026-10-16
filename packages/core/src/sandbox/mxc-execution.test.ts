@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
@@ -13,7 +13,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
 vi.mock('@microsoft/mxc-sdk/v1', () => ({ spawn: mocks.spawn }));
 
-import { executeMxc, quoteWindowsArg, toMxcRequest } from './mxc-execution.js';
+import {
+  executeMxc,
+  quoteWindowsArg,
+  toMxcRequest,
+  toolDirectories,
+} from './mxc-execution.js';
 import type { ExecutionSandboxPolicy } from './sandbox-execution.js';
 import type { ShellOutputEvent } from '../services/shellExecutionService.js';
 
@@ -330,5 +335,57 @@ describe('executeMxc', () => {
     const result = await handle.result;
     expect(result.aborted).toBe(true);
     expect(mocks.spawn).not.toHaveBeenCalled();
+  });
+});
+
+describe.skipIf(process.platform !== 'win32')('toolDirectories', () => {
+  let root: string;
+  beforeEach(() => {
+    root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'mxc-tools-')));
+  });
+  afterEach(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('grants existing PATH folders once and skips missing ones', () => {
+    const tools = path.join(root, 'tools');
+    mkdirSync(tools);
+    const env = {
+      Path: [
+        tools,
+        tools.toUpperCase(),
+        path.join(root, 'missing'),
+        'rel',
+      ].join(';'),
+    };
+    expect(toolDirectories(env, [])).toEqual([tools]);
+  });
+
+  it('skips Windows, the home folder and anything overlapping excluded roots', () => {
+    const workspace = path.join(root, 'ws');
+    const inside = path.join(workspace, 'bin');
+    mkdirSync(inside, { recursive: true });
+    const env = {
+      PATH: [
+        process.env['SystemRoot'] ?? 'C:\\Windows',
+        os.homedir(),
+        path.parse(root).root,
+        inside,
+        root,
+      ].join(';'),
+    };
+    expect(toolDirectories(env, [workspace])).toEqual([]);
+  });
+
+  it('adds tool folders to the read-only grants', () => {
+    const { request } = toMxcRequest(
+      { ...base, filesystem: 'workspace-write' },
+      payload,
+      ['C:\\Program Files\\nodejs'],
+    );
+    expect(request.filesystem?.readonlyPaths).toContain(
+      'C:\\Program Files\\nodejs',
+    );
+    expect(request.filesystem?.readwritePaths).toEqual(['C:\\work\\project']);
   });
 });

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { realpathSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
@@ -33,6 +33,54 @@ export type MxcPolicy = Pick<
   ExecutionSandboxPolicy,
   'workspace' | 'installation' | 'filesystem' | 'network' | 'maskedPaths'
 >;
+
+const MAX_TOOL_DIRECTORIES = 64;
+
+/**
+ * Directories on the command's PATH, to be granted read-only per launch.
+ * Installers such as Node.js protect their folder without an AppContainer
+ * entry, so `npm.cmd` is "access denied" inside the container although
+ * node.exe itself starts. Windows directories are already readable by
+ * AppContainers. Skipped: anything overlapping `exclude` (workspace,
+ * installation, state) and the home directory or any folder above it, which
+ * would expose credentials such as ~/.ssh or ~/.qwen.
+ */
+export function toolDirectories(
+  env: Record<string, string>,
+  exclude: readonly string[],
+): string[] {
+  const pathValue =
+    Object.entries(env).find(([key]) => key.toLowerCase() === 'path')?.[1] ??
+    '';
+  const systemRoot = (process.env['SystemRoot'] || 'C:\\Windows').toLowerCase();
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const entry of pathValue.split(';')) {
+    const dir = entry.trim().replace(/^"(.*)"$/, '$1');
+    if (!dir || !path.isAbsolute(dir)) continue;
+    let resolved: string;
+    try {
+      if (!statSync(dir).isDirectory()) continue;
+      resolved = realpathSync(dir);
+    } catch {
+      continue;
+    }
+    const key = resolved.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (key === systemRoot || key.startsWith(`${systemRoot}\\`)) continue;
+    if (isSubpath(resolved, os.homedir())) continue;
+    if (
+      exclude.some(
+        (root) => isSubpath(root, resolved) || isSubpath(resolved, root),
+      )
+    )
+      continue;
+    result.push(resolved);
+    if (result.length >= MAX_TOOL_DIRECTORIES) break;
+  }
+  return result;
+}
 
 export function windowsCommandProcessor(): string {
   const systemRoot = process.env['SystemRoot'] || 'C:\\Windows';
@@ -74,6 +122,7 @@ export function toMxcRequest(
     ProcessLaunch,
     'executable' | 'args' | 'cwd' | 'env' | 'windowsVerbatimArguments'
   >,
+  toolDirs: readonly string[] = [],
 ): { request: ContainerRequest; warnings: string[] } {
   const quoted = [payload.executable, ...payload.args];
   const verbatimTail = payload.windowsVerbatimArguments && quoted.length > 1;
@@ -94,13 +143,14 @@ export function toMxcRequest(
     policy.filesystem === 'workspace-write'
       ? {
           readwritePaths: [policy.workspace],
-          readonlyPaths: [policy.installation, ...interpreterDir],
+          readonlyPaths: [policy.installation, ...interpreterDir, ...toolDirs],
         }
       : {
           readonlyPaths: [
             policy.workspace,
             policy.installation,
             ...interpreterDir,
+            ...toolDirs,
           ],
         };
   const warnings =
@@ -157,11 +207,16 @@ export async function executeMxc(
   const env = Object.fromEntries(
     Object.entries(payload.env).filter(([key]) => !isInternalSecretEnvVar(key)),
   );
-  const { request, warnings } = toMxcRequest(policy, {
-    ...payload,
-    cwd,
-    env,
-  });
+  const toolDirs = toolDirectories(env, [
+    policy.workspace,
+    policy.installation,
+    policy.state,
+  ]);
+  const { request, warnings } = toMxcRequest(
+    policy,
+    { ...payload, cwd, env },
+    toolDirs,
+  );
   for (const warning of warnings) debugLogger.warn(warning);
 
   if (signal.aborted) {
