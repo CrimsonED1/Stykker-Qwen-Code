@@ -29,7 +29,7 @@ import { sandboxStatusError, type SandboxStatus } from './sandbox-status.js';
 
 const debugLogger = createDebugLogger('SANDBOX_EXECUTION');
 
-export type ExecutionSandboxBackend = 'bwrap' | 'landlock';
+export type ExecutionSandboxBackend = 'bwrap' | 'landlock' | 'mxc';
 export type ExecutionSandboxEnforcement = 'full' | 'partial';
 
 export interface ExecutionSandboxPolicy {

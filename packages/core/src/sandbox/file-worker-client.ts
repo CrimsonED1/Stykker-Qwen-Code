@@ -5,6 +5,7 @@
  */
 
 import { executeSandbox } from './execute-sandbox.js';
+import { windowsSystemEnv } from './mxc-execution.js';
 import {
   sandboxAsset,
   type ExecutionSandboxPolicy,
@@ -38,7 +39,10 @@ export async function writeSandboxFile(
       executable: process.execPath,
       args: [sandboxAsset('file-worker')],
       cwd: policy.workspace,
-      env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' },
+      env:
+        process.platform === 'win32'
+          ? windowsSystemEnv()
+          : { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' },
       stdin,
     },
     (event) => {

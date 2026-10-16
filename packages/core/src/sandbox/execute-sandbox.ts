@@ -12,6 +12,7 @@ import type {
 } from '../services/shellExecutionService.js';
 import { executeBwrap } from './bwrap-execution.js';
 import { executeLandlock } from './landlock-execution.js';
+import { executeMxc } from './mxc-execution.js';
 import type {
   ExecutionSandboxPolicy,
   SandboxExecutionHandle,
@@ -39,6 +40,17 @@ export function executeSandbox(
   }
   if (policy.effectiveBackend === 'landlock') {
     return executeLandlock(
+      policy,
+      payload,
+      onOutput,
+      signal,
+      usePty,
+      config,
+      options,
+    );
+  }
+  if (policy.effectiveBackend === 'mxc') {
+    return executeMxc(
       policy,
       payload,
       onOutput,
