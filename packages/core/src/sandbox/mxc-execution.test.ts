@@ -93,6 +93,22 @@ describe('toMxcRequest', () => {
     expect(listed.some((value) => value.includes('.qwen'))).toBe(false);
   });
 
+  it('grants read access to the Node binary folder when it launches the file worker', () => {
+    const { request } = toMxcRequest(
+      { ...base, filesystem: 'workspace-write' },
+      {
+        executable: process.execPath,
+        args: ['worker.js'],
+        cwd: 'C:\\work\\project',
+        env: {},
+      },
+    );
+    expect(request.filesystem?.readonlyPaths).toContain(
+      path.dirname(process.execPath),
+    );
+    expect(request.filesystem?.readwritePaths).toEqual(['C:\\work\\project']);
+  });
+
   it('warns when masked paths are configured, since Windows cannot enforce them', () => {
     const { warnings } = toMxcRequest(
       { ...base, maskedPaths: ['C:\\work\\project\\secret'] },

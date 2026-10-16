@@ -82,13 +82,27 @@ export function toMxcRequest(
     ...quoted.map(quoteWindowsArg),
     verbatimTail ? last : quoteWindowsArg(last),
   ].join(' ');
+  // The sandboxed file worker is started with this process's own Node binary,
+  // which lives outside the installation (for example the desktop runtime's
+  // node/ folder). Grant read access to that folder so the interpreter can load
+  // its own files; nothing else from it is writable.
+  const interpreterDir =
+    payload.executable.toLowerCase() === process.execPath.toLowerCase()
+      ? [path.dirname(process.execPath)]
+      : [];
   const filesystem =
     policy.filesystem === 'workspace-write'
       ? {
           readwritePaths: [policy.workspace],
-          readonlyPaths: [policy.installation],
+          readonlyPaths: [policy.installation, ...interpreterDir],
         }
-      : { readonlyPaths: [policy.workspace, policy.installation] };
+      : {
+          readonlyPaths: [
+            policy.workspace,
+            policy.installation,
+            ...interpreterDir,
+          ],
+        };
   const warnings =
     policy.maskedPaths && policy.maskedPaths.length > 0
       ? [
