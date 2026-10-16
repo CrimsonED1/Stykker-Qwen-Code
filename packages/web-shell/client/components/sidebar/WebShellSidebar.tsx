@@ -528,6 +528,9 @@ interface WebShellSidebarProps {
   lockedWorkspace?: WebShellSidebarLockedWorkspace;
   branding?: false | WebShellSidebarBranding;
   primaryNav?: WebShellSidebarPrimaryNavOptions;
+  /** Replace daemon history with navigation owned by an external session provider. */
+  sessionContent?: ReactNode;
+  sessionHeader?: ReactNode;
   /** Whether to show the Tasks/Channels session-source switch. Defaults to true. */
   showSessionSourceSwitch?: boolean;
   /** Show Live conversations and, in rail layout, the Live entry. Defaults to false. */
@@ -821,7 +824,9 @@ function SidebarSessionSurface({
   open,
   onOpenChange,
   isCloseBlocked,
-  children,
+  children: defaultChildren,
+  content,
+  header,
 }: {
   collapsed: boolean;
   label: string;
@@ -832,7 +837,15 @@ function SidebarSessionSurface({
   onOpenChange: (open: boolean) => void;
   isCloseBlocked: () => boolean;
   children: ReactNode;
+  content?: ReactNode;
+  header?: ReactNode;
 }) {
+  const children = (
+    <>
+      {header}
+      {content === undefined ? defaultChildren : content}
+    </>
+  );
   const closeTimerRef = useRef<number | undefined>(undefined);
   const pointerOpenRef = useRef(false);
   const interactionOpenRef = useRef(false);
@@ -1069,6 +1082,8 @@ export function WebShellSidebar({
   lockedWorkspace: lockedWorkspaceOptions,
   branding,
   primaryNav: primaryNavOptions,
+  sessionContent,
+  sessionHeader,
   showSessionSourceSwitch = true,
   showLive = false,
   hideProjectHeader,
@@ -1197,7 +1212,8 @@ export function WebShellSidebar({
   const shouldRenderBrand =
     branding !== false && !(mobileOpen && branding?.hideWhenCompact);
   const organizationEnabled = Boolean(
-    connection.capabilities?.features?.includes(SESSION_ORGANIZATION_FEATURE),
+    sessionContent === undefined &&
+      connection.capabilities?.features?.includes(SESSION_ORGANIZATION_FEATURE),
   );
   const sourceMetadataEnabled = Boolean(
     connection.capabilities?.features?.includes('session_source_metadata'),
@@ -1250,7 +1266,9 @@ export function WebShellSidebar({
     workspace.capabilities?.features.includes('channel_management'),
   );
   const channelGroupingEnabled =
-    selectedSessionSource === 'channel' && channelManagementEnabled;
+    sessionContent === undefined &&
+    selectedSessionSource === 'channel' &&
+    channelManagementEnabled;
   const {
     data: channelCatalogData,
     catalog: channelTypeCatalog,
@@ -1270,11 +1288,14 @@ export function WebShellSidebar({
     ),
   );
   const workspaceSessionLiveStateSupported = Boolean(
-    connection.capabilities?.features?.includes(
-      'workspace_session_live_state',
-    ) && typeof workspace.client.getWorkspaceSessionLiveState === 'function',
+    sessionContent === undefined &&
+      connection.capabilities?.features?.includes(
+        'workspace_session_live_state',
+      ) &&
+      typeof workspace.client.getWorkspaceSessionLiveState === 'function',
   );
-  const sessionCatalogRequestsEnabled = connection.capabilities !== undefined;
+  const sessionCatalogRequestsEnabled =
+    sessionContent === undefined && connection.capabilities !== undefined;
   const workspaceSessionMetadataEnabled = Boolean(
     connection.capabilities?.features?.includes('workspace_session_metadata'),
   );
@@ -1315,7 +1336,8 @@ export function WebShellSidebar({
     ? workspaces.find((entry) => entry.cwd === lockedWorkspaceCwd)
     : undefined;
   const includePrimaryWorkspaceSessions =
-    !lockedWorkspaceCwd || lockedWorkspace?.primary === true;
+    sessionContent === undefined &&
+    (!lockedWorkspaceCwd || lockedWorkspace?.primary === true);
   const projectName =
     getWorkspaceName(connection.workspaceCwd) || t('sidebar.projectFallback');
   const displayedWorkspaces = useMemo<DaemonWorkspaceCapability[]>(() => {
@@ -2986,7 +3008,7 @@ export function WebShellSidebar({
       void (async () => {
         try {
           const created = await onNewSession(workspaceCwd);
-          if (created) {
+          if (created && sessionContent === undefined) {
             bumpWorkspaceReload();
             const ownerCwd = workspaceCwd ?? primaryWorkspaceCwd;
             if (ownerCwd) {
@@ -3009,6 +3031,7 @@ export function WebShellSidebar({
       onNewSession,
       primaryWorkspaceCwd,
       sessionCatalogController,
+      sessionContent,
       t,
     ],
   );
@@ -6631,12 +6654,26 @@ export function WebShellSidebar({
               stay gated on projectFeaturesEnabled below. */}
             <SidebarSessionSurface
               collapsed={!railLayout && collapsed}
-              label={t('sidebar.project')}
-              status={collapsedSessionStatus}
-              statusLabel={collapsedSessionStatusLabel}
+              label={t(
+                sessionContent === undefined
+                  ? 'sidebar.project'
+                  : 'managed.sessions',
+              )}
+              status={
+                sessionContent === undefined
+                  ? collapsedSessionStatus
+                  : undefined
+              }
+              statusLabel={
+                sessionContent === undefined
+                  ? collapsedSessionStatusLabel
+                  : undefined
+              }
               width={sidebarWidth}
               open={collapsedSessionsOpen}
               onOpenChange={setCollapsedSessionsOpen}
+              content={sessionContent}
+              header={sessionHeader}
               isCloseBlocked={isCollapsedCloseBlocked}
             >
               {!channelNavigationEnabled &&
