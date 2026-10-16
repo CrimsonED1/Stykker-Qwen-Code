@@ -8,6 +8,7 @@ Regeln für Agenten: [`../QWEN.md`](../QWEN.md).
 | `plans/`                             | eigene Pläne und Notizen (Dateiname `JJJJ-MM-TT-…md`)                       |
 | `scripts/update-desktop.bat`         | Desktop-Runtime aus diesem Fork bauen und einsetzen, mit Aktualitätsprüfung |
 | `scripts/update-desktop-restart.bat` | Ein-Klick: Qwen beenden, aktualisieren, App wieder starten                  |
+| `scripts/mxc-host-prep.bat`          | Windows einmalig für die Werkzeug-Sandbox (MXC) vorbereiten, mit UAC        |
 
 ## Ordner unter `<qwen-root>`
 
@@ -98,6 +99,66 @@ Fehler sichtbar ist.
   `corepack pnpm install --frozen-lockfile`, sonst bricht der Build ab, _nachdem_ Qwen schon beendet
   ist. Sicherer Weg bei Merges: erst im Fork `npm run build:runtime --workspaces=false` bauen
   (berührt die laufende App nicht), dann die Verknüpfung nutzen.
+
+## Werkzeug-Sandbox (MXC) unter Windows — Installation
+
+Stand 2026-10-16, Branch `feat/mxc-execution-sandbox` (noch nicht in `skymain`). Die Sandbox sperrt Befehle und
+Dateischreiben der Werkzeuge auf den Projektordner; unter Windows macht das Microsofts MXC
+(`@microsoft/mxc-sdk`, Prozess-Container auf AppContainer-Basis).
+
+### Voraussetzungen
+
+| Punkt                      | Wert                                                                          |
+| -------------------------- | ----------------------------------------------------------------------------- |
+| Windows                    | 11 24H2 ab Build 26100.9278 bzw. 25H2 ab 26200.9278 (`winver`)                |
+| Node für den Runtime-Build | ≥ 24.21 (`.nvmrc` = 24); MXC braucht unter Windows 24.21 für die Ein-/Ausgabe |
+| Admin-Rechte               | einmalig für Schritt 2                                                        |
+
+### Schritte
+
+1. **Runtime mit MXC bauen/einsetzen** wie unter „Desktop aktualisieren“. Die Runtime enthält das SDK unter
+   `runtime\qwen-code\lib\node_modules\@microsoft\mxc-sdk` (nur win32-x64, ca. +40 MB).
+2. **Windows vorbereiten (einmalig, Admin):** `stykker\scripts\mxc-host-prep.bat` doppelklicken und die UAC-Abfrage
+   bestätigen. Das Skript sucht `wxc-host-prep.exe` (Runtime, Fork, Worktrees daneben) und führt
+   `prepare-system-drive` für das Systemlaufwerk, das Laufwerk von Qwen und das von `%TEMP%` aus.
+   Vorher anschauen, was passieren würde: `mxc-host-prep.bat -List` (ohne Admin).
+3. **Sandbox einschalten** in den User-Settings (`%USERPROFILE%\.qwen\settings.json`) oder, für Firmen, in den
+   System-Settings (`C:\ProgramData\qwen-code\settings.json`):
+   ```json
+   {
+     "tools": {
+       "executionSandbox": {
+         "backend": "mxc",
+         "filesystem": "workspace-write",
+         "network": "closed"
+       }
+     }
+   }
+   ```
+   `"backend": "auto"` wählt unter Windows ebenfalls `mxc`. Wirkt nach Neustart von Qwen.
+4. **Prüfen:** `qwen sandbox` zeigt `backend: mxc → mxc (full)`;
+   `qwen sandbox -- cmd /c "echo x> ..\x.txt"` muss „Zugriff verweigert“ melden.
+
+Hinweis: In der Desktop-App (ACP-Sitzungen) lehnt Qwen die Sandbox derzeit noch ab; das ist der nächste Schritt
+(Plan außerhalb des Repos). In der Kommandozeile `qwen` funktioniert sie.
+
+### Was Schritt 2 an Windows ändert
+
+Je Laufwerksstamm (`C:\`, `D:\`, …) zwei Einträge, nicht vererbt, nur
+`FILE_READ_ATTRIBUTES | FILE_READ_EA | READ_CONTROL | SYNCHRONIZE`:
+`ALL APPLICATION PACKAGES` (`S-1-15-2-1`) und `ALL RESTRICTED APPLICATION PACKAGES` (`S-1-15-2-2`).
+Kein Auflisten, kein Lesen von Dateien, kein Schreiben; Unterordner unberührt. Ohne diese Einträge brechen `node.exe`,
+`npm` und der Datei-Worker in der Sandbox mit `EPERM: lstat 'X:\'` ab (Windows-Standard: Container dürfen den
+Laufwerksstamm nicht einmal abfragen). Quelle: MXC-Doku `docs/backends/process-container/host-prep.md`.
+
+Rückgängig: `mxc-host-prep.bat -Undo` (entfernt genau diese Einträge). Andere Laufwerke: `-Drives C,D`.
+Firmen können denselben Befehl (`wxc-host-prep.exe prepare-system-drive --target X:\`) per Intune/GPO verteilen.
+
+### Bekannte Grenzen
+
+- Nur der Projektordner ist beschreibbar (ein eigener Temp-Ordner der Sandbox ist geplant).
+- Unter Windows lassen sich keine einzelnen Pfade im Projekt sperren (`maskedPaths` → „partial“).
+- Win32k bleibt für Befehle an (sonst startet `node.exe` nicht); Zwischenablage und Eingabe-Injektion sind gesperrt.
 
 ## Eigene Version erkennen
 
