@@ -27,10 +27,10 @@ if /i "%~1"=="/F" set "FORCE=1"
 if /i "%~1"=="--force" set "FORCE=1"
 
 rem Pfade relativ zum Skript, nicht zu einem festen Laufwerk: der Fork
-rem liegt neben qwen-code-desktop, Node 22 eine Ebene darueber.
+rem liegt neben qwen-code-desktop, Node 24 eine Ebene darueber.
 for %%i in ("%~dp0..\..") do set "SRC=%%~fi\"
 for %%i in ("%SRC%..\qwen-code-desktop") do set "DESKTOP=%%~fi"
-for %%i in ("%SRC%..\..\node-v22.23.3-win-x64") do set "NODE22=%%~fi"
+for %%i in ("%SRC%..\..\node-v24.21.0-win-x64") do set "NODEDIR=%%~fi"
 set "RUNTIME=%DESKTOP%\runtime\qwen-code"
 set "NEWRUNTIME=%SRC%packages\desktop\runtime\qwen-code"
 
@@ -41,24 +41,24 @@ echo  Quelle : %SRC%
 echo  Ziel   : %RUNTIME%
 echo.
 
-rem --- 1. Node 22 vorhanden ---
-if not exist "%NODE22%\node.exe" (
-  echo FEHLER: Node 22 nicht gefunden unter "%NODE22%".
-  echo Der Desktop-Runtime-Build verlangt Node 22 ^(siehe .nvmrc^).
+rem --- 1. Node 24 vorhanden ---
+if not exist "%NODEDIR%\node.exe" (
+  echo FEHLER: Node 24 nicht gefunden unter "%NODEDIR%".
+  echo Der Desktop-Runtime-Build verlangt Node 24.21 oder neuer ^(siehe .nvmrc, MXC^).
   echo.
   pause
   exit /b 1
 )
 
-set "PATH=%NODE22%;%PATH%"
+set "PATH=%NODEDIR%;%PATH%"
 
 rem --- Versionsstand des Quellcodes ermitteln ---
 rem Kennzeichnung: <version>+sky.<commit>[.dirty]
 rem Anzeige in "qwen --version" und unten in der Seitenleiste.
-for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -p "require('%SRC:\=/%package.json').version"`) do set "PKGVER=%%i"
+for /f "usebackq delims=" %%i in (`%NODEDIR%\node.exe -p "require('%SRC:\=/%package.json').version"`) do set "PKGVER=%%i"
 for /f "usebackq delims=" %%i in (`git -C "%SRC%." rev-parse --short^=7 HEAD`) do set "GITSHA=%%i"
 for /f "usebackq delims=" %%i in (`git -C "%SRC%." rev-parse HEAD`) do set "GITSHAFULL=%%i"
-for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -v`) do set "NODEVER=%%i"
+for /f "usebackq delims=" %%i in (`%NODEDIR%\node.exe -v`) do set "NODEVER=%%i"
 set "DIRTY="
 for /f "usebackq delims=" %%i in (`git -C "%SRC%." status --porcelain --untracked-files^=no`) do set "DIRTY=.dirty"
 set "QWEN_CODE_BUILD_VERSION=!PKGVER!+sky.!GITSHA!!DIRTY!"
@@ -71,7 +71,7 @@ rem installierte Runtime gebaut wurde. Sind alle drei gleich, ist der
 rem Quellcode sauber und die Runtime vollstaendig, liefert ein Neubau
 rem dasselbe Ergebnis - dann nur melden und beenden.
 set "MF="
-if exist "%RUNTIME%\manifest.json" for /f "usebackq delims=" %%i in (`%NODE22%\node.exe -p "const m=require('%RUNTIME:\=/%/manifest.json');[m.qwenCodeCommit,m.qwenCodeVersion,m.node].join('|')"`) do set "MF=%%i"
+if exist "%RUNTIME%\manifest.json" for /f "usebackq delims=" %%i in (`%NODEDIR%\node.exe -p "const m=require('%RUNTIME:\=/%/manifest.json');[m.qwenCodeCommit,m.qwenCodeVersion,m.node].join('|')"`) do set "MF=%%i"
 if "!FORCE!"=="1" goto :bauen
 if not defined MF (
   echo  Manifest fehlt oder unlesbar - Build wird ausgefuehrt.
@@ -137,7 +137,7 @@ if not errorlevel 1 (
 rem --- 4. Desktop-Runtime aus dem Quellcode bauen ---
 echo [1/3] Baue CLI und Desktop-Runtime ... ^(dauert mehrere Minuten^)
 cd /d "%SRC%packages\desktop"
-call "%NODE22%\npm.cmd" run build:runtime --workspaces=false
+call "%NODEDIR%\npm.cmd" run build:runtime --workspaces=false
 if errorlevel 1 goto :err
 
 if not exist "%NEWRUNTIME%\lib\cli-entry.js" (
