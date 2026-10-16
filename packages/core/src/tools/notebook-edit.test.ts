@@ -19,10 +19,21 @@ import { createMockWorkspaceContext } from '../test-utils/mockWorkspaceContext.j
 import { ToolErrorType } from './tool-error.js';
 import type { ToolInvocation, ToolResult } from './tools.js';
 import { applyNotebookEdit, NotebookEditTool } from './notebook-edit.js';
+import { writeRuntimeFile } from '../sandbox/runtime-file.js';
 
 vi.mock('../telemetry/loggers.js', () => ({
   logFileOperation: vi.fn(),
 }));
+
+vi.mock('../sandbox/runtime-file.js', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('../sandbox/runtime-file.js')>();
+  return {
+    ...actual,
+    captureRuntimeFileVersion: vi.fn(actual.captureRuntimeFileVersion),
+    writeRuntimeFile: vi.fn(actual.writeRuntimeFile),
+  };
+});
 
 describe('NotebookEditTool', () => {
   let tempDir: string;
@@ -157,6 +168,39 @@ describe('NotebookEditTool', () => {
     });
     return path.join('.qwen', 'team-memory', 'analysis.ipynb');
   };
+
+  it('writes through the sandbox runtime file helper, not the host filesystem, under an execution sandbox', async () => {
+    const filePath = writeSeeded(
+      'sandboxed.ipynb',
+      nb45([cell('code', 'load-data', ['x = 1\n'])], PYTHON),
+    );
+    Object.assign(config, {
+      getShellExecutionSandbox: vi.fn().mockReturnValue({ workspace: tempDir }),
+    });
+    const hostWriteSpy = vi.spyOn(
+      StandardFileSystemService.prototype,
+      'writeTextFile',
+    );
+    vi.mocked(writeRuntimeFile).mockResolvedValueOnce(undefined);
+
+    const result = await replaceLoadData(filePath);
+
+    expect(result.error).toBeUndefined();
+    expect(writeRuntimeFile).toHaveBeenCalledOnce();
+    const [calledConfig, params, expected, signal] =
+      vi.mocked(writeRuntimeFile).mock.calls[0]!;
+    expect(calledConfig).toBe(config);
+    expect(params).toEqual(
+      expect.objectContaining({
+        path: filePath,
+        toolWriteOrigin: 'notebook_edit',
+      }),
+    );
+    expect(expected).toEqual(expect.anything());
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(hostWriteSpy).not.toHaveBeenCalled();
+    hostWriteSpy.mockRestore();
+  });
 
   it('replaces a code cell by real ID and clears stale outputs', async () => {
     const filePath = writeSeeded(

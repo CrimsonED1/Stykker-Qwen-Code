@@ -1750,23 +1750,28 @@ export async function loadCliConfig(
       'Choose operator settings or a programmatic execution sandbox policy, not both.',
     );
   }
+  // ACP sessions run with the sandbox. Under ACP the sandbox wins over LSP
+  // (LSP is disabled for the session below), but a plain CLI still refuses it.
+  const acpSession = Boolean(argv.acp || argv.experimentalAcp);
   if (
     sandboxEnabled &&
     (argv.promptInteractive !== undefined ||
       argv.inputFormat === 'stream-json' ||
-      argv.acp ||
-      argv.experimentalAcp ||
       argv.worktree !== undefined ||
-      argv.experimentalLsp ||
+      (argv.experimentalLsp && !acpSession) ||
       argv.mcpConfig ||
       argv.extensions?.length ||
       argv.includeDirectories?.length ||
       overrideExtensions?.length ||
-      Object.keys(sessionMcpServers ?? {}).length ||
       provisionalWorkspace)
   ) {
     throw new Error(
-      'tools.executionSandbox does not yet support ACP, worktree management, LSP, MCP, extensions or provisional workspaces.',
+      'tools.executionSandbox does not yet support worktree management, LSP, MCP, extensions or provisional workspaces.',
+    );
+  }
+  if (sandboxEnabled && Object.keys(sessionMcpServers ?? {}).length) {
+    throw new Error(
+      'tools.executionSandbox does not support MCP servers supplied by the client for this session.',
     );
   }
   const safeMode =
@@ -1878,12 +1883,18 @@ export async function loadCliConfig(
           .concat((argv.includeDirectories || []).map(resolvePath));
 
   // LSP configuration: enabled only via --experimental-lsp flag
+  if (sandboxEnabled && acpSession && argv.experimentalLsp === true) {
+    debugLogger.warn(
+      'tools.executionSandbox is active: LSP is disabled for this ACP session.',
+    );
+  }
   const lspEnabled =
     !agentHostReadOnly &&
     !sshWorkspace &&
     !provisionalWorkspace &&
     !bareMode &&
-    argv.experimentalLsp === true;
+    argv.experimentalLsp === true &&
+    !(sandboxEnabled && acpSession);
   let lspClient: LspClient | undefined;
   const question = argv.promptInteractive || argv.prompt || '';
   const inputFormat: InputFormat =
