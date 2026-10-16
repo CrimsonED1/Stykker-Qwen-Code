@@ -642,6 +642,12 @@ export interface ServeAppDeps {
    * `channel_reload` is advertised only while the control state is enabled.
    */
   reloadChannelWorker?: () => Promise<ChannelWorkerSnapshot>;
+  /**
+   * Operator-scope `tools.executionSandbox` is set. Session agents, squads and
+   * workspace agent collaboration are not mounted (session paths answer 409),
+   * and channel start and create answer 409. Reads stay allowed.
+   */
+  executionSandboxActive?: boolean;
   channelManagementService?: (
     runtime: WorkspaceRuntime,
   ) =>
@@ -3531,6 +3537,7 @@ export function createServeApp(
   ) {
     registerWorkspaceChannelControlRoutes(app, {
       getChannelWorkerControl: channelWorkerControl,
+      channelsDisabledBySandbox: () => deps.executionSandboxActive === true,
       ...(deps.isChannelControlDraining
         ? { isDaemonDraining: deps.isChannelControlDraining }
         : {}),
@@ -3556,6 +3563,7 @@ export function createServeApp(
   if (deps.channelManagementService) {
     registerWorkspaceChannelManagementRoutes(app, {
       primaryRuntime,
+      channelsDisabledBySandbox: () => deps.executionSandboxActive === true,
       workspaceRegistry,
       resolveService: deps.channelManagementService,
       mutate,
@@ -3737,7 +3745,25 @@ export function createServeApp(
   // refusing inside the handlers. Skipping the call leaves the routes 404,
   // which is also what the absent `agent_collaboration_v1` capability tells
   // clients.
-  if (anyAgentCollaborationEnabled()) {
+  // Under the operator sandbox the session agent and squad paths answer 409
+  // instead, and nothing else of the collaboration surface is mounted, so no
+  // orchestrator starts.
+  if (deps.executionSandboxActive) {
+    for (const sessionAgentPath of [
+      '/workspaces/:workspace/agent/sessions',
+      '/workspaces/:workspace/agent/session-events',
+      '/workspaces/:workspace/agent/squads',
+    ]) {
+      app.use(sessionAgentPath, (_req, res) => {
+        res.status(409).json({
+          error:
+            'Session agents are not available while tools.executionSandbox is active.',
+          code: 'session_agents_disabled_by_execution_sandbox',
+        });
+      });
+    }
+  }
+  if (anyAgentCollaborationEnabled() && !deps.executionSandboxActive) {
     registerWorkspaceAgentRoutes(app, {
       workspaceRegistry,
       mutate,

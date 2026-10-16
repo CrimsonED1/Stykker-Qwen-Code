@@ -5,7 +5,7 @@
  */
 
 import {
-  assertExecutionSandboxSupported,
+  assertExecutionSandboxServeSurface,
   InvalidExecutionSandboxConfigError,
 } from '../config/execution-sandbox-settings.js';
 import type { RunHandle } from './run-qwen-serve.js';
@@ -597,10 +597,8 @@ export async function tryRunServeFastPath(
     );
     return false;
   }
-  assertExecutionSandboxSupported(
-    settings ?? {},
-    'serve / ACP / web terminals',
-  );
+  // The fast path never accepts --profile, so it always runs the default profile.
+  assertExecutionSandboxServeSurface(settings ?? {}, 'default');
   applyRateLimitEnvDefaults(parsed.options, process.env);
   discardRateLimitTuningWhenDisabled(parsed.options);
 

@@ -80,7 +80,7 @@ function service(): ChannelManagementService {
   };
 }
 
-function mount(secondaryTrusted = true) {
+function mount(secondaryTrusted = true, channelsDisabledBySandbox = false) {
   const primary = runtime('primary', '/work/primary');
   const secondary = runtime('secondary', '/work/secondary', secondaryTrusted);
   const primaryService = service();
@@ -104,6 +104,7 @@ function mount(secondaryTrusted = true) {
     primaryRuntime: primary,
     workspaceRegistry: createWorkspaceRegistry([primary, secondary]),
     resolveService: (target) => services.get(target.workspaceCwd),
+    channelsDisabledBySandbox: () => channelsDisabledBySandbox,
     mutate,
     safeBody: (req) => (req.body ?? {}) as Record<string, unknown>,
     parseAndValidateClientId: (req, res) => {
@@ -249,6 +250,39 @@ describe('workspace Channel management routes', () => {
         },
       ],
     });
+  });
+
+  it('refuses create, configure and start under the sandbox but keeps reads and stop', async () => {
+    const test = mount(true, true);
+
+    for (const [method, url, body] of [
+      [
+        'put',
+        '/workspace/channels/bot',
+        { expectedRevision: 'r1', config: {} },
+      ],
+      [
+        'put',
+        '/workspace/channels/bot/startup',
+        { expectedRevision: 'r1', enabled: true },
+      ],
+      ['post', '/workspace/channels/bot/start', {}],
+      ['post', '/workspace/channels/bot/restart', {}],
+    ] as const) {
+      const response = await auth(request(test.app)[method](url).send(body));
+      expect(response.status).toBe(409);
+      expect(response.body.code).toBe('channels_disabled_by_execution_sandbox');
+    }
+    expect(test.primaryService.upsert).not.toHaveBeenCalled();
+    expect(test.primaryService.setStartup).not.toHaveBeenCalled();
+    expect(test.primaryService.start).not.toHaveBeenCalled();
+    expect(test.primaryService.restart).not.toHaveBeenCalled();
+
+    await auth(request(test.app).get('/workspace/channels')).expect(200);
+    await auth(request(test.app).post('/workspace/channels/bot/stop')).expect(
+      200,
+    );
+    expect(test.primaryService.stop).toHaveBeenCalledOnce();
   });
 
   it('routes strict CRUD and lifecycle mutations to the primary service', async () => {

@@ -25,8 +25,13 @@ import type { ChannelWorkerSnapshot } from '../channel-worker-supervisor.js';
 import type { SendBridgeError } from '../server/error-response.js';
 import type { ServeChannelSelection } from '../types.js';
 
+export const CHANNELS_DISABLED_BY_SANDBOX_MESSAGE =
+  'Channels are disabled while tools.executionSandbox is active.';
+
 interface RegisterWorkspaceChannelControlRoutesDeps {
   getChannelWorkerControl: () => ChannelWorkerControlState;
+  /** Operator sandbox is set: starting channel workers is refused (409). */
+  channelsDisabledBySandbox?: () => boolean;
   isDaemonDraining?: () => boolean;
   isManagerInitializing?: () => boolean;
   setChannelWorkerSelection?: (
@@ -303,6 +308,13 @@ export function registerWorkspaceChannelControlRoutes(
             error: 'Daemon is shutting down.',
             code: 'daemon_draining',
             state: deps.getChannelWorkerControl(),
+          });
+          return;
+        }
+        if (deps.channelsDisabledBySandbox?.()) {
+          res.status(409).json({
+            error: CHANNELS_DISABLED_BY_SANDBOX_MESSAGE,
+            code: 'channels_disabled_by_execution_sandbox',
           });
           return;
         }

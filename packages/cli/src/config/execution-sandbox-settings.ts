@@ -214,13 +214,31 @@ export function validateExecutionSandboxSelection(
   return policy;
 }
 
-export function assertExecutionSandboxSupported(
+/**
+ * The daemon's operator-scope policy, or undefined when none is configured.
+ * Only operator (system/user) settings count: a workspace cannot enable the
+ * sandbox for the daemon.
+ */
+export function readOperatorExecutionSandboxPolicy():
+  | ExecutionSandboxSettings
+  | undefined {
+  return validateExecutionSandboxSelection(readOperatorSandboxSettings());
+}
+
+/**
+ * `qwen serve` validates the sandbox settings for every surface it starts.
+ * Only `hosted-harness` is refused with a sandbox: it runs model tools inside
+ * the daemon, which the sandbox does not cover. Other surfaces keep their
+ * tools in ACP children, where the sandbox applies.
+ */
+export function assertExecutionSandboxServeSurface(
   settings: SandboxSettingsInput,
-  surface: string,
+  profile: 'default' | 'hosted-harness',
 ): void {
-  if (validateExecutionSandboxSelection(settings)) {
+  const policy = validateExecutionSandboxSelection(settings);
+  if (policy && profile === 'hosted-harness') {
     throw new InvalidExecutionSandboxConfigError(
-      `tools.executionSandbox does not yet support ${surface}. Use the ordinary CLI or terminal UI.`,
+      'tools.executionSandbox does not support --profile hosted-harness, which runs model tools inside the daemon. Remove tools.executionSandbox or start without that profile.',
     );
   }
 }

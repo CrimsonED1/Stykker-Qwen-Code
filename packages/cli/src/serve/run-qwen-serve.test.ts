@@ -14285,6 +14285,56 @@ describe('runQwenServe channel worker supervisor', () => {
     }
   });
 
+  it('starts no channel worker while an operator tools.executionSandbox is set', async () => {
+    tmpDir = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), 'qws-channel-sandbox-')),
+    );
+    const systemSettings = path.join(tmpDir, 'system-settings.json');
+    fs.writeFileSync(
+      systemSettings,
+      JSON.stringify({
+        tools: {
+          executionSandbox: { filesystem: 'read-only', network: 'closed' },
+        },
+      }),
+    );
+    vi.stubEnv('QWEN_CODE_SYSTEM_SETTINGS_PATH', systemSettings);
+    const worker = makeWorker({
+      enabled: true,
+      state: 'running',
+      pid: 1234,
+      channels: ['telegram'],
+    });
+    const factory = makeReadyWorkerFactory(worker);
+
+    try {
+      const handle = await runQwenServe(
+        {
+          port: 0,
+          hostname: '127.0.0.1',
+          mode: 'http-bridge',
+          workspace: tmpDir,
+          serveWebShell: false,
+          channelSelection: { mode: 'names', names: ['telegram'] },
+        },
+        {
+          bridge: makeFakeBridge(),
+          channelWorkerSupervisorFactory: factory,
+          channelServicePidfile: makePidfileDeps(),
+        },
+      );
+      try {
+        await handle.runtimeReady;
+        expect(factory).not.toHaveBeenCalled();
+        expect(worker.start).not.toHaveBeenCalled();
+      } finally {
+        await handle.close();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('certifies the channel worker daemon URL at boot before workers start', async () => {
     // Deleting the assertChannelWorkerDaemonUrlIsLocal call site in
     // ensureChannelWorkerManager leaves this uncalled (mutation M3 in the

@@ -16,6 +16,7 @@ import type {
   RevisionRequest,
 } from '../channel-management-service.js';
 import { assertValidChannelSecretUpdates } from '../channel-settings-store.js';
+import { CHANNELS_DISABLED_BY_SANDBOX_MESSAGE } from './workspace-channel-control.js';
 import {
   requireTrustedWorkspaceRuntime,
   resolveWorkspaceRuntimeWithLiveCompatibilityFromParam,
@@ -34,6 +35,8 @@ const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
 interface RegisterWorkspaceChannelManagementRoutesDeps {
   primaryRuntime: WorkspaceRuntime;
   workspaceRegistry: WorkspaceRegistry;
+  /** Operator sandbox is set: create, configure, start and restart answer 409. */
+  channelsDisabledBySandbox?: () => boolean;
   resolveService: (
     runtime: WorkspaceRuntime,
   ) =>
@@ -333,6 +336,14 @@ export function registerWorkspaceChannelManagementRoutes(
   app: Application,
   deps: RegisterWorkspaceChannelManagementRoutesDeps,
 ): void {
+  const rejectWhileChannelsDisabled = (res: Response): boolean => {
+    if (!deps.channelsDisabledBySandbox?.()) return false;
+    res.status(409).json({
+      error: CHANNELS_DISABLED_BY_SANDBOX_MESSAGE,
+      code: 'channels_disabled_by_execution_sandbox',
+    });
+    return true;
+  };
   const primary: RuntimeResolver = () => deps.primaryRuntime;
   const qualified: RuntimeResolver = (req, res) =>
     resolveWorkspaceRuntimeWithLiveCompatibilityFromParam(
@@ -498,6 +509,7 @@ export function registerWorkspaceChannelManagementRoutes(
     app.put(`${prefix}/channels/:name`, upsert, async (req, res) => {
       const resolved = await target(req, res);
       if (!resolved || !validateClient(req, res, resolved.runtime)) return;
+      if (rejectWhileChannelsDisabled(res)) return;
       const name = parseInstanceName(req, res);
       if (!name) return;
       const request = parseUpsert(deps.safeBody(req), res);
@@ -536,6 +548,7 @@ export function registerWorkspaceChannelManagementRoutes(
     app.put(`${prefix}/channels/:name/startup`, startup, async (req, res) => {
       const resolved = await target(req, res);
       if (!resolved || !validateClient(req, res, resolved.runtime)) return;
+      if (rejectWhileChannelsDisabled(res)) return;
       const name = parseInstanceName(req, res);
       if (!name) return;
       const request = parseStartup(deps.safeBody(req), res);
@@ -564,6 +577,9 @@ export function registerWorkspaceChannelManagementRoutes(
         async (req, res) => {
           const resolved = await target(req, res);
           if (!resolved || !validateClient(req, res, resolved.runtime)) return;
+          // Stop is still allowed while the sandbox is set; only starting
+          // a worker is refused.
+          if (operation !== 'stop' && rejectWhileChannelsDisabled(res)) return;
           const name = parseInstanceName(req, res);
           if (!name) return;
           try {

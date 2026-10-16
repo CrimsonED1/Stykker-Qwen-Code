@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  assertExecutionSandboxSupported,
+  assertExecutionSandboxServeSurface,
   parseExecutionSandboxSettings,
   readOperatorSandboxSettings,
   selectOperatorExecutionSandbox,
@@ -382,13 +382,34 @@ describe('operator execution sandbox policy', () => {
       }),
     ).toEqual(restricted);
   });
-  it('rejects unsupported frontends with the actual policy', () => {
+  it('serve surfaces accept the sandbox in the default profile', () => {
+    const settings = { tools: { executionSandbox: restricted } };
     expect(() =>
-      assertExecutionSandboxSupported(
+      assertExecutionSandboxServeSurface(settings, 'default'),
+    ).not.toThrow();
+    expect(() =>
+      assertExecutionSandboxServeSurface({}, 'hosted-harness'),
+    ).not.toThrow();
+  });
+  it('serve refuses the sandbox only with the hosted-harness profile', () => {
+    expect(() =>
+      assertExecutionSandboxServeSurface(
         { tools: { executionSandbox: restricted } },
-        'serve',
+        'hosted-harness',
       ),
-    ).toThrow('does not yet support serve');
-    expect(() => assertExecutionSandboxSupported({}, 'serve')).not.toThrow();
+    ).toThrow('does not support --profile hosted-harness');
+  });
+  it('still validates the sandbox settings themselves in the default profile', () => {
+    expect(() =>
+      assertExecutionSandboxServeSurface(
+        {
+          tools: {
+            executionSandbox: restricted,
+            sandbox: 'bwrap',
+          },
+        } as Parameters<typeof assertExecutionSandboxServeSurface>[0],
+        'default',
+      ),
+    ).toThrow('Whole-CLI bwrap has been removed');
   });
 });

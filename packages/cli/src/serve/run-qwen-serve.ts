@@ -5,7 +5,8 @@
  */
 
 import {
-  assertExecutionSandboxSupported,
+  assertExecutionSandboxServeSurface,
+  readOperatorExecutionSandboxPolicy,
   readOperatorSandboxSettings,
   InvalidExecutionSandboxConfigError,
 } from '../config/execution-sandbox-settings.js';
@@ -3413,14 +3414,17 @@ async function runQwenServeImpl(
     );
   }
   preResolveServeFastPathHomeEnvOverrides();
-  assertExecutionSandboxSupported(
+  assertExecutionSandboxServeSurface(
     readOperatorSandboxSettings(),
-    'serve / ACP / web terminals',
+    optsIn.profile ?? 'default',
   );
-  assertExecutionSandboxSupported(
+  assertExecutionSandboxServeSurface(
     deps.bootSettings ?? {},
-    'serve / ACP / web terminals',
+    optsIn.profile ?? 'default',
   );
+  // Operator-scope sandbox policy for the whole daemon. While it is set,
+  // channel workers are not started and session agents answer 409.
+  const executionSandboxOperatorPolicy = readOperatorExecutionSandboxPolicy();
 
   const { token, generated: generatedToken } = resolveRemoteServeToken(
     optsIn.token,
@@ -3590,6 +3594,13 @@ async function runQwenServeImpl(
             (cdpTunnelOverWsEnv !== undefined ||
               chromeExtensionOriginAllowed))),
   };
+  // While the operator sandbox is set, no channel worker is started or
+  // restored. The stored `serve.channels` settings stay untouched.
+  const channelsDisabledBySandbox =
+    executionSandboxOperatorPolicy !== undefined;
+  const channelSelectionDisabledBySandbox =
+    channelsDisabledBySandbox && opts.channelSelection !== undefined;
+  if (channelSelectionDisabledBySandbox) opts.channelSelection = undefined;
   let channelRuntime = opts.channelSelection
     ? await loadChannelWorkerRuntime()
     : undefined;
@@ -4162,9 +4173,9 @@ async function runQwenServeImpl(
         `serve.tokenQr overrides.`,
     );
   }
-  assertExecutionSandboxSupported(
+  assertExecutionSandboxServeSurface(
     bootSettings ?? {},
-    'serve / ACP / web terminals',
+    optsIn.profile ?? 'default',
   );
   // Init daemon logger early so all subsequent lifecycle events
   // (bridge spawn diagnostics, shutdown errors) are captured to file.
@@ -4178,6 +4189,22 @@ async function runQwenServeImpl(
     baseDir: daemonLogBaseDir,
   });
   loggerLifecycle.initialized(daemonLog);
+  if (executionSandboxOperatorPolicy) {
+    // Operator-scope settings only; no paths or user names are logged.
+    daemonLog.info('tools.executionSandbox is active (operator settings)', {
+      backend: executionSandboxOperatorPolicy.backend ?? 'auto',
+      filesystem: executionSandboxOperatorPolicy.filesystem,
+      network: executionSandboxOperatorPolicy.network,
+    });
+    if (
+      channelSelectionDisabledBySandbox ||
+      bootSettings?.serve?.channels !== undefined
+    ) {
+      daemonLog.warn(
+        'channels are disabled while tools.executionSandbox is active',
+      );
+    }
+  }
   let channelSelectionFromSettings = false;
   // An explicit `--channel` selection bounds what this daemon hosts, at boot
   // and afterwards, so it has to be remembered before the settings restore
@@ -4329,6 +4356,7 @@ async function runQwenServeImpl(
   };
   if (
     opts.profile !== 'hosted-harness' &&
+    !channelsDisabledBySandbox &&
     !opts.channelSelection &&
     (bootSettings?.serve?.channels !== undefined ||
       startupChannelWorkspaces.length > 1)
@@ -5259,9 +5287,9 @@ async function runQwenServeImpl(
           `(${err instanceof Error ? err.message : String(err)}); falling back to defaults.`,
       );
     }
-    assertExecutionSandboxSupported(
+    assertExecutionSandboxServeSurface(
       runtimeBootSettings?.merged ?? {},
-      'serve workspace runtimes',
+      optsIn.profile ?? 'default',
     );
     if (
       deps.trustedWorkspace === undefined &&
@@ -6614,9 +6642,9 @@ async function runQwenServeImpl(
     };
 
     for (const workspaceInput of workspaceInputs.slice(1)) {
-      assertExecutionSandboxSupported(
+      assertExecutionSandboxServeSurface(
         readOperatorSandboxSettings(),
-        'serve workspace runtimes',
+        optsIn.profile ?? 'default',
       );
       const secondaryDecision = trustPolicy.evaluateDaemonWorkspaceTrust(
         bootTrustSnapshot,
@@ -6643,9 +6671,9 @@ async function runQwenServeImpl(
             `falling back to defaults.`,
         );
       }
-      assertExecutionSandboxSupported(
+      assertExecutionSandboxServeSurface(
         secondarySettings?.merged ?? {},
-        'serve workspace runtimes',
+        optsIn.profile ?? 'default',
       );
       if (!secondaryTrusted) {
         daemonLog.warn('secondary workspace is not trusted', {
@@ -7303,9 +7331,9 @@ async function runQwenServeImpl(
         provenance === 'managed-scratch' || provenance === 'live-conversation'
           ? true
           : (buildOptions?.trusted ?? decision.targetTrusted);
-      assertExecutionSandboxSupported(
+      assertExecutionSandboxServeSurface(
         readOperatorSandboxSettings(),
-        'serve workspace runtimes',
+        optsIn.profile ?? 'default',
       );
       let wsSettings: ReturnType<SettingsRuntime['loadSettings']> | undefined;
       try {
@@ -7324,9 +7352,9 @@ async function runQwenServeImpl(
             `falling back to defaults.`,
         );
       }
-      assertExecutionSandboxSupported(
+      assertExecutionSandboxServeSurface(
         wsSettings?.merged ?? {},
-        'serve workspace runtimes',
+        optsIn.profile ?? 'default',
       );
       const wsEnv = createRuntimeEnvMetadata(cwd, wsSettings, trusted);
       const wsCustomIgnoreFiles =
@@ -7894,6 +7922,7 @@ async function runQwenServeImpl(
           !runtimeAdded.trusted ||
           runtimeAdded.primary ||
           channelSelectionFromFlag ||
+          channelsDisabledBySandbox ||
           lateRestoredWorkspaces.has(workspaceCwd) ||
           // A remote workspace's `serve.channels` is not this daemon's to
           // host, the same exclusion boot applies.
@@ -8393,6 +8422,7 @@ async function runQwenServeImpl(
       channelDeliveryAuthorizations,
       reloadChannelWorker,
       channelManagementService,
+      executionSandboxActive: channelsDisabledBySandbox,
       getPerfSnapshot: () => ({
         eventLoop: currentDaemonEventLoopMonitor.snapshot(),
         promptQueueWait: {
@@ -9715,8 +9745,15 @@ async function runQwenServeImpl(
           const createSupervisor =
             deps.channelWorkerSupervisorFactory ??
             workerRuntime.createChannelWorkerSupervisor;
-          const createGroup = (groups: readonly ChannelWorkspaceGroup[]) =>
-            workerRuntime.createChannelWorkerGroup({
+          const createGroup = (groups: readonly ChannelWorkspaceGroup[]) => {
+            // Defense in depth: no channel worker can spawn while the
+            // operator sandbox is set, whichever route asked for it.
+            if (channelsDisabledBySandbox) {
+              throw new Error(
+                'channels are disabled while tools.executionSandbox is active',
+              );
+            }
+            return workerRuntime.createChannelWorkerGroup({
               groups,
               registry,
               createSupervisor,
@@ -9766,6 +9803,7 @@ async function runQwenServeImpl(
                 else daemonLog.info(message);
               },
             });
+          };
           channelWorkerManager = workerRuntime.createChannelWorkerManager({
             resolveGroups: (selection, operation) =>
               resolveRuntimeChannelGroups(selection, candidateApp, operation),

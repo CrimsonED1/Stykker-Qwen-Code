@@ -5366,6 +5366,43 @@ describe('createServeApp', () => {
         .expect(404);
     });
 
+    it('answers session-agent paths 409 and mounts no collaboration routes under the operator sandbox', async () => {
+      const app = createServeApp(baseOpts, undefined, {
+        bridge: fakeBridge(),
+        executionSandboxActive: true,
+      });
+      const capabilities = await request(app)
+        .get('/capabilities')
+        .set('Host', `127.0.0.1:${baseOpts.port}`);
+      expect(capabilities.body.features).not.toContain(
+        'agent_collaboration_v1',
+      );
+      expect(app.locals['stopSessionAgentOrchestrators']).toBeUndefined();
+
+      const primary = capabilities.body.workspaces.find(
+        (workspace: { primary?: boolean }) => workspace.primary,
+      );
+      for (const [method, path] of [
+        ['post', `/workspaces/${primary.id}/agent/sessions/s1/runs`],
+        ['get', `/workspaces/${primary.id}/agent/session-events`],
+        ['get', `/workspaces/${primary.id}/agent/squads`],
+      ] as const) {
+        const response = await request(app)
+          [method](path)
+          .set('Host', `127.0.0.1:${baseOpts.port}`);
+        expect(response.status).toBe(409);
+        expect(response.body).toEqual({
+          error:
+            'Session agents are not available while tools.executionSandbox is active.',
+          code: 'session_agents_disabled_by_execution_sandbox',
+        });
+      }
+      await request(app)
+        .get(`/workspaces/${primary.id}/agent/agents`)
+        .set('Host', `127.0.0.1:${baseOpts.port}`)
+        .expect(404);
+    });
+
     it('keeps collaboration enabled while workspace settings are malformed', async () => {
       const root = await fsp.mkdtemp(
         path.join(os.tmpdir(), 'qwen-agent-collaboration-settings-'),
