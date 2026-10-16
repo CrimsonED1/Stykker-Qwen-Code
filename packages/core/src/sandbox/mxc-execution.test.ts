@@ -73,6 +73,11 @@ describe('toMxcRequest', () => {
       expect(request.filesystem).toEqual(expectedFs);
       expect(request.network).toEqual({ egress: { default: egress } });
       expect(request.containment).toEqual({ type: 'processcontainer' });
+      expect(request.ui).toEqual({
+        disable: false,
+        clipboard: 'none',
+        allowInputInjection: false,
+      });
       expect(request.inheritDefaultEnvironment).toBe(false);
       expect(request.workingDirectory).toBe('C:\\work\\project');
       expect(request.environment).toEqual(payload.env);

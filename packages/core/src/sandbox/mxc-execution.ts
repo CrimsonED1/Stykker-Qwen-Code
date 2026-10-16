@@ -117,6 +117,12 @@ export function toMxcRequest(
       network: {
         egress: { default: policy.network === 'open' ? 'allow' : 'deny' },
       },
+      // `ui.disable: true` turns off Win32k for the process, and node.exe (so
+      // the file worker and every npm or node command) then fails to start
+      // with STATUS_DLL_INIT_FAILED. Keep Win32k but deny the clipboard and
+      // input injection; desktop switching and shutdown stay blocked by MXC's
+      // defaults.
+      ui: { disable: false, clipboard: 'none', allowInputInjection: false },
       workingDirectory: payload.cwd,
       environment: payload.env,
       inheritDefaultEnvironment: false,
