@@ -17,7 +17,7 @@ hängen an keinem Laufwerksbuchstaben.)
 
 | Ordner              | Zweck                                                       |
 | ------------------- | ----------------------------------------------------------- |
-| `qwen-code-fork`    | dieser Fork, Arbeitsbranch `skymain`                        |
+| `qwen-code-fork`    | dieser Fork, Arbeitsbranch `mainstykker`                    |
 | `qwen-code-desktop` | installierte Desktop-App, Runtime unter `runtime\qwen-code` |
 | `package`           | installierte CLI, kein Git                                  |
 
@@ -26,7 +26,7 @@ hängen an keinem Laufwerksbuchstaben.)
 ## Remotes
 
 ```
-origin    https://github.com/CrimsonED1/qwen-code.git   (Fork)
+origin    https://github.com/CrimsonED1/Stykker-Qwen-Code.git   (Fork)
 upstream  https://github.com/QwenLM/qwen-code.git       (Original)
 ```
 
@@ -35,10 +35,10 @@ upstream  https://github.com/QwenLM/qwen-code.git       (Original)
 ```bash
 git fetch upstream
 git switch main && git merge --ff-only upstream/main && git push origin main
-git switch skymain && git merge main && git push origin skymain
+git switch mainstykker && git merge main && git push origin mainstykker
 ```
 
-`git merge upstream/main` direkt in `skymain` ergibt denselben Baum; `main` bleibt dann aber auf dem
+`git merge upstream/main` direkt in `mainstykker` ergibt denselben Baum; `main` bleibt dann aber auf dem
 alten Stand.
 
 **Vor dem Bauen die Abhängigkeiten nachziehen** — ein Merge kann neue Pakete mitbringen, `node_modules`
@@ -53,7 +53,7 @@ Sonst bricht der Build ab. Am 2026-10-06 scheiterte er in `packages/cli` mit
 weil der Merge `minimatch ^9.0.4` mitbrachte und im Wurzel-`node_modules` nur 3.1.5 lag. Nach dem
 Install (9.0.9) lief derselbe Build ohne Codeänderung durch.
 
-Merge statt Rebase: `skymain` wird geteilt und behält die Merge-Commits der Fix-Branches.
+Merge statt Rebase: `mainstykker` wird geteilt und behält die Merge-Commits der Fix-Branches.
 
 ## Neuer Fix / PR
 
@@ -61,10 +61,10 @@ Merge statt Rebase: `skymain` wird geteilt und behält die Merge-Commits der Fix
 git switch -c fix/<thema> main
 # ändern, testen, committen (upstream-Stil)
 git push -u origin fix/<thema>          # PR: CrimsonED1:fix/<thema> -> QwenLM:main
-git switch skymain && git merge --no-ff fix/<thema>
+git switch mainstykker && git merge --no-ff fix/<thema>
 ```
 
-Offene Branches (in `skymain` gemergt, noch kein PR):
+Offene Branches (in `mainstykker` gemergt, noch kein PR):
 
 - `fix/openrouter-tool-parameters`: Tools ohne Argumente bekommen bei OpenRouter wieder ein leeres
   `parameters`-Schema (sonst „JSON error injected into SSE stream“, z. B. `stealth/space-bunny-alpha`).
@@ -102,7 +102,7 @@ Fehler sichtbar ist.
 
 ## Werkzeug-Sandbox (MXC) unter Windows — Installation
 
-Stand 2026-10-16, Branch `feat/mxc-execution-sandbox` (noch nicht in `skymain`). Die Sandbox sperrt Befehle und
+Stand 2026-10-16, Branch `feat/mxc-execution-sandbox`, seit 2026-10-16 in `mainstykker`. Die Sandbox sperrt Befehle und
 Dateischreiben der Werkzeuge auf den Projektordner; unter Windows macht das Microsofts MXC
 (`@microsoft/mxc-sdk`, Prozess-Container auf AppContainer-Basis).
 
@@ -203,6 +203,6 @@ auch dieser Push hat nichts ausgelöst, obwohl `ci.yml` einen `push`-Trigger auf
 Das ist nur die halbe Antwort: ob Actions im Repo an- oder abgeschaltet ist, gibt die API ohne Token
 nicht preis (`/actions/permissions` → 401 Nicht autorisiert). Zum Nachsehen im Browser: Settings →
 Actions → General. Falls dort jemand Actions einschaltet, feuert ein Push auf **`main`** (nicht auf
-`skymain`); `main` wird nur als Spiegel von `upstream/main` gepusht.
+`mainstykker`); `main` wird nur als Spiegel von `upstream/main` gepusht.
 
-Pushes auf `skymain` haben nichts ausgelöst, und es kommt auch kein Lauf nachträglich.
+Pushes auf `mainstykker` haben nichts ausgelöst, und es kommt auch kein Lauf nachträglich.

@@ -4,7 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 rem ============================================================
 rem  Qwen Code Desktop aktualisieren
 rem ------------------------------------------------------------
-rem  Baut die CLI aus diesem Fork (Branch skymain) neu und kopiert
+rem  Baut die CLI aus diesem Fork (Branch mainstykker) neu und kopiert
 rem  den Desktop-Runtime in die installierte App.
 rem
 rem  Zuerst wird das Manifest der installierten Runtime geprueft:

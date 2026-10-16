@@ -8,7 +8,7 @@ Ersetzt den Auftrag aus `qwen-code-personal`. Hintergrund: `2026-10-02-openroute
 
 - Repo `<qwen-root>\qwen-code-fork`, neuer Branch **`feat/provider-model-discovery`** von `main`.
 - Branch enthält nur PR-taugliche Änderungen, keine Dateien aus `stykker/`. Regeln: `QWEN.md`.
-- Am Ende `git merge --no-ff` nach `skymain`. Commit nur nach Freigabe, Push und PR nur nach Freigabe.
+- Am Ende `git merge --no-ff` nach `mainstykker`. Commit nur nach Freigabe, Push und PR nur nach Freigabe.
 - Skill `/feat-dev` (`.qwen/skills/feat-dev`) und `AGENTS.md` befolgen.
 
 ## Ziel

@@ -1,14 +1,14 @@
-# QWEN.md – Fork CrimsonED1/qwen-code
+# QWEN.md – Fork CrimsonED1/Stykker-Qwen-Code
 
 Ergänzt [`AGENTS.md`](AGENTS.md) (upstream, gilt weiter vollständig). Diese Datei existiert nur im Fork.
 
 ## Branches
 
 - `main`: reiner Spiegel von `upstream/main`. Nie direkt committen.
-- `skymain`: Arbeitsstand = `main` + gemergte Fix-Branches + Ordner `stykker/` + diese Datei.
+- `mainstykker`: Arbeitsstand = `main` + gemergte Fix-Branches + Ordner `stykker/` + diese Datei.
 - Änderungen am Qwen-Code selbst immer auf eigenem Branch von `main` (`fix/…`, `feat/…`),
-  dann per `git merge --no-ff` nach `skymain`. So bleibt jeder Branch als PR an upstream nutzbar.
-- PRs nie von `skymain` aus; dort liegen fork-eigene Dateien.
+  dann per `git merge --no-ff` nach `mainstykker`. So bleibt jeder Branch als PR an upstream nutzbar.
+- PRs nie von `mainstykker` aus; dort liegen fork-eigene Dateien.
 
 ## Fork-eigene Dateien
 
